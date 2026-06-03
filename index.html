@@ -1161,10 +1161,32 @@ function _saveEditsLocal() {
     try { localStorage.setItem('awayDaysEdits', JSON.stringify(edits)); } catch(e) {}
 }
 
+function _cleanStaleEdits() {
+    var dirty = false;
+    Object.keys(edits).forEach(function(ek) {
+        var parts = ek.split('_');
+        var ck = parts.slice(0, -1).join('_');
+        var cfg = countryConfigs[ck];
+        if (!cfg || !cfg.target) return;
+        var entry = edits[ek];
+        if (!entry || !entry.current) return;
+        var removedSet = entry.removed || {};
+        var active = entry.current.filter(function(h) {
+            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+        });
+        if (active.length > cfg.target + 2) {
+            delete edits[ek];
+            dirty = true;
+        }
+    });
+    if (dirty) saveEdits();
+}
+
 if (fbReady) {
     fbDb.ref('awayDaysEdits').on('value', function(snap) {
         var val = snap.val();
         edits = val ? val : {};
+        _cleanStaleEdits();
         _editsLoaded = true;
         _saveEditsLocal();
         if (typeof refreshAllViews === 'function') refreshAllViews();
