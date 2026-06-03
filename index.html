@@ -1470,7 +1470,12 @@ function renderCountryTabs() {
     document.querySelectorAll('.cal-grid-placeholder').forEach(ph => {
         const ck = ph.dataset.country;
         const yr = parseInt(ph.dataset.year) || currentYear;
-        renderCalendarGrid(ph, yr, getActiveHolidays(ck, yr), ck);
+        try {
+            renderCalendarGrid(ph, yr, getActiveHolidays(ck, yr), ck);
+        } catch(err) {
+            ph.innerHTML = '<div style="color:red;padding:10px;">Error rendering ' + ck + ': ' + err.message + '</div>';
+            console.error('Calendar error for ' + ck + ':', err);
+        }
     });
 }
 
@@ -2200,7 +2205,19 @@ function renderSuggestedCalendar(countryKey) {
     var tinyInner = document.getElementById('tinyCalRefInner');
     if (tinyInner) renderTinyCalendar(tinyInner, countryKey);
     var calInner = document.getElementById('suggestCalGridInner');
-    if (calInner) renderCalendarGrid(calInner, year, activeHols, countryKey);
+    if (calInner) {
+        try {
+            renderCalendarGrid(calInner, year, activeHols, countryKey);
+        } catch(err) {
+            calInner.innerHTML = '<div style="color:red;padding:20px;border:2px solid red;border-radius:8px;margin:10px 0;">Calendar render error: ' + err.message + '</div>';
+            console.error('renderCalendarGrid error:', err);
+        }
+        if (!calInner.innerHTML || calInner.innerHTML.trim() === '') {
+            calInner.innerHTML = '<div style="color:#F59E0B;padding:20px;border:2px solid #F59E0B;border-radius:8px;margin:10px 0;">Calendar rendered empty — activeHols: ' + activeHols.length + ', year: ' + year + ', country: ' + countryKey + '</div>';
+        }
+    } else {
+        console.warn('suggestCalGridInner not found in DOM');
+    }
 }
 
 function onSuggestCountryChange() {
