@@ -3095,9 +3095,7 @@ function downloadExcel() {
 /* ── Download Guide (Away Days Guide PDF) ─────────────────────── */
 function downloadGuide() {
     if (!guideData || Object.keys(guideData).length === 0) {
-        alert("The Away Days Guide PDF is too large for the hosted version.
-
-To download it, run generate_html.py locally and use the local dashboard.");
+        alert("The Away Days Guide PDF is too large for the hosted version.\n\nTo download it, run generate_html.py locally and use the local dashboard.");
         return;
     }
     var yr = 2026 + 1;
