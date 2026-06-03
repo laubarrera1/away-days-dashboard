@@ -1614,7 +1614,12 @@ function renderCalendarGrid(container, year, holidays, countryKey) {
         html += '</table></div>';
     }
     html += '</div>';
+    if (!html || html.length < 100) {
+        container.innerHTML = '<div style="color:orange;padding:10px;">Warning: calendar HTML too short (' + html.length + ' chars) for ' + countryKey + ' ' + year + '</div>';
+        return;
+    }
     container.innerHTML = html;
+    container.style.border = '1px dashed #ccc';
     setupDragDrop(container, countryKey, year);
 }
 
