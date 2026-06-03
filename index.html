@@ -1153,8 +1153,16 @@ function requireEditor() {
 var edits = {};
 var _editsLoaded = false;
 
+var _EDITS_VERSION = 'v2';
 function _loadEditsLocal() {
-    try { var s = localStorage.getItem('awayDaysEdits'); return s ? JSON.parse(s) : {}; }
+    try {
+        if (localStorage.getItem('awayDaysEditsVersion') !== _EDITS_VERSION) {
+            localStorage.removeItem('awayDaysEdits');
+            localStorage.setItem('awayDaysEditsVersion', _EDITS_VERSION);
+            return {};
+        }
+        var s = localStorage.getItem('awayDaysEdits'); return s ? JSON.parse(s) : {};
+    }
     catch(e) { return {}; }
 }
 function _saveEditsLocal() {
@@ -2128,6 +2136,7 @@ function renderSuggestedCalendar(countryKey) {
 
     var q = String.fromCharCode(39);
     if (actionsEl) {
+        actionsEl.style.display = 'flex';
         actionsEl.innerHTML = '<button class="suggest-action-btn remove-all" onclick="suggestRemoveAll(' + q + countryKey + q + ')">✕ Remove All Suggested</button>'
             + '<button class="suggest-action-btn add-all" onclick="suggestAddAll(' + q + countryKey + q + ')">+ Add All Back' + (removedCount > 0 ? ' (' + removedCount + ')' : '') + '</button>';
     }
