@@ -1132,6 +1132,14 @@ try {
 /* ── Editor Password Gate ────────────────────────────────────── */
 var EDITOR_PASSWORD = 'awaydays2027';
 var isEditor = false;
+try { if (localStorage.getItem('awayDaysEditor') === 'true') { isEditor = true; } } catch(e) {}
+if (isEditor) {
+    document.body.classList.add('editor-mode');
+    setTimeout(function() {
+        var badge = document.getElementById('editorBadge');
+        if (badge) badge.style.display = 'inline-flex';
+    }, 100);
+}
 function checkEditorAuth() {
     if (isEditor) return true;
     var pwd = prompt('Enter the editor password to make changes:');
@@ -1140,6 +1148,7 @@ function checkEditorAuth() {
         document.body.classList.add('editor-mode');
         var badge = document.getElementById('editorBadge');
         if (badge) badge.style.display = 'inline-flex';
+        try { localStorage.setItem('awayDaysEditor', 'true'); } catch(e) {}
         return true;
     }
     alert('Incorrect password. You can still view the dashboard, but edits are disabled.');
@@ -1228,8 +1237,18 @@ if (fbReady) {
 function saveEdits() {
     _saveEditsLocal();
     if (fbReady) {
-        fbDb.ref('awayDaysEdits').set(edits).catch(function(e) {
+        var dot = document.getElementById('syncDot');
+        var label = document.getElementById('syncLabel');
+        if (dot) dot.className = 'sync-dot syncing';
+        if (label) label.textContent = 'Saving...';
+        fbDb.ref('awayDaysEdits').set(edits).then(function() {
+            if (dot) dot.className = 'sync-dot';
+            if (label) label.textContent = 'Synced';
+        }).catch(function(e) {
             console.warn('Firebase write failed:', e);
+            if (dot) dot.className = 'sync-dot offline';
+            if (label) label.textContent = 'Save failed!';
+            alert('Failed to save changes: ' + e.message + '\nPlease check your connection and try again.');
         });
     }
 }
