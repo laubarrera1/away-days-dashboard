@@ -1800,6 +1800,9 @@ function addDayToCalendar(countryKey, dateStr, year) {
     var target = cfg.target || 0;
     var ek = getEditKey(countryKey, year);
     if (!edits[ek]) {
+        applySuggestionsToHolidays(countryKey, year);
+    }
+    if (!edits[ek]) {
         var original = JSON.parse(JSON.stringify((allHolidays[String(year)] || {})[countryKey] || []));
         edits[ek] = { original: original, current: JSON.parse(JSON.stringify(original)), changes: {} };
     }
@@ -1831,6 +1834,9 @@ function removeDayFromCalendar(countryKey, dateStr, year) {
     hideCtxMenu();
     if (!requireEditor()) return;
     var ek = getEditKey(countryKey, year);
+    if (!edits[ek]) {
+        applySuggestionsToHolidays(countryKey, year);
+    }
     if (!edits[ek]) {
         var original = JSON.parse(JSON.stringify((allHolidays[String(year)] || {})[countryKey] || []));
         edits[ek] = { original: original, current: JSON.parse(JSON.stringify(original)), changes: {} };
@@ -1871,6 +1877,9 @@ function refreshCalendars(countryKey, year) {
 function applyEdit(countryKey, year, fromDate, toDate, holiday) {
     if (!requireEditor()) return;
     const ek = getEditKey(countryKey, year);
+    if (!edits[ek]) {
+        applySuggestionsToHolidays(countryKey, year);
+    }
     if (!edits[ek]) {
         const original = JSON.parse(JSON.stringify((allHolidays[String(year)] || {})[countryKey] || []));
         edits[ek] = { original: original, current: JSON.parse(JSON.stringify(original)), changes: {} };
