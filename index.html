@@ -1170,7 +1170,7 @@ function requireEditor() {
 var edits = {};
 var _editsLoaded = false;
 
-var _EDITS_VERSION = 'v3';
+var _EDITS_VERSION = 'v4';
 function _loadEditsLocal() {
     try {
         if (localStorage.getItem('awayDaysEditsVersion') !== _EDITS_VERSION) {
@@ -1230,15 +1230,27 @@ function _sanitizeEdits(raw) {
 
 if (fbReady) {
     fbDb.ref('awayDaysEdits').on('value', function(snap) {
-        var val = snap.val();
-        edits = _sanitizeEdits(val);
-        _cleanStaleEdits();
-        _editsLoaded = true;
-        _saveEditsLocal();
-        if (typeof refreshAllViews === 'function') refreshAllViews();
+        try {
+            var val = snap.val();
+            edits = _sanitizeEdits(val);
+            _cleanStaleEdits();
+            _editsLoaded = true;
+            _saveEditsLocal();
+            if (typeof refreshAllViews === 'function') refreshAllViews();
+        } catch(err) {
+            console.error('Firebase sync error:', err);
+            edits = {};
+            _editsLoaded = true;
+            if (typeof refreshAllViews === 'function') refreshAllViews();
+        }
     });
 } else {
-    edits = _sanitizeEdits(_loadEditsLocal());
+    try {
+        edits = _sanitizeEdits(_loadEditsLocal());
+    } catch(err) {
+        console.error('localStorage load error:', err);
+        edits = {};
+    }
     _editsLoaded = true;
 }
 
