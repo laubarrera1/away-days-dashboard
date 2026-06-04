@@ -1228,8 +1228,11 @@ function _sanitizeEdits(raw) {
     return result;
 }
 
+var _savingToFirebase = false;
+
 if (fbReady) {
     fbDb.ref('awayDaysEdits').on('value', function(snap) {
+        if (_savingToFirebase) return;
         try {
             var val = snap.val();
             edits = _sanitizeEdits(val);
@@ -1261,10 +1264,13 @@ function saveEdits() {
         var label = document.getElementById('syncLabel');
         if (dot) dot.className = 'sync-dot syncing';
         if (label) label.textContent = 'Saving...';
+        _savingToFirebase = true;
         fbDb.ref('awayDaysEdits').set(edits).then(function() {
+            _savingToFirebase = false;
             if (dot) dot.className = 'sync-dot';
             if (label) label.textContent = 'Synced';
         }).catch(function(e) {
+            _savingToFirebase = false;
             console.warn('Firebase write failed:', e);
             if (dot) dot.className = 'sync-dot offline';
             if (label) label.textContent = 'Save failed!';
