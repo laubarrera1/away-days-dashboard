@@ -1685,6 +1685,12 @@ function setupDragDrop(container, countryKey, year) {
             var hasHol = this.classList.contains('cal-hol');
             showCtxMenu(e.clientX, e.clientY, ds, countryKey, year, hasHol);
         });
+        cell.addEventListener('click', function(e) {
+            var ds = this.dataset.date;
+            if (!ds) return;
+            var hasHol = this.classList.contains('cal-hol');
+            showCtxMenu(e.clientX, e.clientY, ds, countryKey, year, hasHol);
+        });
         cell.addEventListener('dragstart', function(e) {
             if (!requireEditor()) { e.preventDefault(); return; }
             dragSrcDate = this.dataset.date;
