@@ -1190,17 +1190,38 @@ function _cleanStaleEdits() {
     if (dirty) saveEdits();
 }
 
+function _sanitizeEdits(raw) {
+    if (!raw || typeof raw !== 'object') return {};
+    var result = {};
+    Object.keys(raw).forEach(function(ek) {
+        var entry = raw[ek];
+        if (!entry || typeof entry !== 'object') return;
+        var cur = entry.current;
+        if (cur && !Array.isArray(cur)) {
+            cur = Object.values(cur);
+        }
+        result[ek] = {
+            original: entry.original || [],
+            current: cur || [],
+            changes: entry.changes || {},
+            removed: entry.removed || {},
+            suggestions: entry.suggestions || []
+        };
+    });
+    return result;
+}
+
 if (fbReady) {
     fbDb.ref('awayDaysEdits').on('value', function(snap) {
         var val = snap.val();
-        edits = val ? val : {};
+        edits = _sanitizeEdits(val);
         _cleanStaleEdits();
         _editsLoaded = true;
         _saveEditsLocal();
         if (typeof refreshAllViews === 'function') refreshAllViews();
     });
 } else {
-    edits = _loadEditsLocal();
+    edits = _sanitizeEdits(_loadEditsLocal());
     _editsLoaded = true;
 }
 
@@ -1485,7 +1506,8 @@ function getEditKey(countryKey, year) {
 
 function getHolidaysForCountry(countryKey, year) {
     const ek = getEditKey(countryKey, year);
-    if (edits[ek]) return edits[ek].current;
+    if (edits[ek] && Array.isArray(edits[ek].current)) return edits[ek].current;
+    if (edits[ek] && edits[ek].current) return Object.values(edits[ek].current);
     const src = (allHolidays[String(year)] || {})[countryKey] || [];
     return src;
 }
@@ -1530,7 +1552,8 @@ function renderCalendarGrid(container, year, holidays, countryKey) {
 
     const ek = getEditKey(countryKey, year);
     if (edits[ek]) {
-        html += '<button class="cal-reset-btn" onclick="resetEdits(&quot;' + countryKey + '&quot;,' + year + ')">↩ Reset Changes (' + Object.keys(edits[ek].changes).length + ')</button>';
+        var changeCount = edits[ek].changes ? Object.keys(edits[ek].changes).length : 0;
+        html += '<button class="cal-reset-btn" onclick="resetEdits(&quot;' + countryKey + '&quot;,' + year + ')">↩ Reset Changes (' + changeCount + ')</button>';
     }
 
     html += '<div class="cal-grid">';
@@ -3244,6 +3267,10 @@ function downloadExcel() {
 
 /* ── Download Guide (Away Days Guide PDF) ─────────────────────── */
 function downloadGuide() {
+    if (!guideData || Object.keys(guideData).length === 0) {
+        alert("The Away Days Guide PDF is too large for the hosted version.\n\nTo download it, run generate_html.py locally and use the local dashboard.");
+        return;
+    }
     var yr = 2026 + 1;
     var key = 'guide_' + yr;
     if (typeof guideData !== 'undefined' && guideData[key]) {
