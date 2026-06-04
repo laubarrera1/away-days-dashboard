@@ -1197,7 +1197,7 @@ function _cleanStaleEdits() {
         if (!entry || !entry.current) return;
         var removedSet = entry.removed || {};
         var active = entry.current.filter(function(h) {
-            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
         });
         if (active.length > cfg.target + 2) {
             delete edits[ek];
@@ -1306,7 +1306,7 @@ function renderTiles() {
             div.className = 'tile';
 
             var liveHols = getActiveHolidays(t.key, currentYear);
-            var liveAway = liveHols.filter(h => h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec').length;
+            var liveAway = liveHols.filter(h => h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested').length;
             var liveDays = liveAway;
             var liveTarget = t.target;
             var liveDiff = liveDays - liveTarget;
@@ -1800,7 +1800,7 @@ function addDayToCalendar(countryKey, dateStr, year) {
     var hols = edits[ek].current;
     var removedSet = edits[ek].removed || {};
     var activeCount = hols.filter(function(h) {
-        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
     }).length;
     if (activeCount >= target) { alert('Cannot add — already at the target of ' + target + ' days.'); return; }
     var exists = hols.find(function(h) { return h.date === dateStr; });
@@ -1960,7 +1960,7 @@ function generateSuggestions(countryKey, year) {
     const cfg = countryConfigs[countryKey];
     if (!cfg || !holidays) return [];
 
-    const coreHolidays = holidays.filter(h => h.type === 'Core' || h.type === 'Quebec');
+    const coreHolidays = holidays.filter(h => h.type === 'Core');
     const nonCoreHolidays = holidays.filter(h => h.type === 'Non-Core');
     const dnsHolidays = holidays.filter(h => h.type === 'DNS');
     const wkHolidays = holidays.filter(h => h.type === 'Weekend Holiday*');
@@ -2070,7 +2070,7 @@ function applySuggestionsToHolidays(countryKey, year) {
         var target = cfg.target || 0;
         var removedSet = edits[ek].removed || {};
         var active = (edits[ek].current || []).filter(function(h) {
-            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
         });
         if (target > 0 && active.length > target + 2) {
             delete edits[ek];
@@ -2191,7 +2191,7 @@ function renderSuggestedCalendar(countryKey) {
 
     const cfg = countryConfigs[countryKey] || {};
     const target = cfg.target || 0;
-    const coreCount = activeHols.filter(h => h.type === 'Core' || h.type === 'Quebec').length;
+    const coreCount = activeHols.filter(h => h.type === 'Core').length;
     const suggestCount = activeHols.filter(h => h.type === 'Suggested').length;
     const nonCoreCount = activeHols.filter(h => h.type === 'Non-Core').length;
     const dnsCount = activeHols.filter(h => h.type === 'DNS').length;
@@ -2325,7 +2325,7 @@ function suggestAddBack(countryKey, dateStr) {
     var target = cfg.target || 0;
     var removedSet = edits[ek].removed;
     var activeCount = edits[ek].current.filter(function(h) {
-        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
     }).length;
     if (activeCount >= target) { alert('Cannot add — already at the target of ' + target + ' days.'); return; }
     delete edits[ek].removed[dateStr];
@@ -2355,7 +2355,7 @@ function suggestAddAll(countryKey) {
     var removedSet = edits[ek].removed;
     var hols = edits[ek].current;
     var activeCount = hols.filter(function(h) {
-        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+        return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
     }).length;
     var canAdd = Math.max(0, target - activeCount);
     var removedKeys = Object.keys(removedSet);
@@ -2380,7 +2380,7 @@ function suggestAddFromDropdown(countryKey) {
     if (edits[ek] && edits[ek].removed && edits[ek].removed[dateStr]) {
         var removedSet = edits[ek].removed || {};
         var activeCount = edits[ek].current.filter(function(h) {
-            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+            return !removedSet[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
         }).length;
         if (activeCount >= target) { alert('Cannot add — already at the target of ' + target + ' days.'); return; }
         delete edits[ek].removed[dateStr];
@@ -2393,7 +2393,7 @@ function suggestAddFromDropdown(countryKey) {
     var hols = edits[ek].current;
     var removedSet2 = edits[ek].removed || {};
     var activeCount2 = hols.filter(function(h) {
-        return !removedSet2[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec');
+        return !removedSet2[h.date] && (h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested');
     }).length;
     if (activeCount2 >= target) { alert('Cannot add — already at the target of ' + target + ' days.'); return; }
 
@@ -3190,7 +3190,7 @@ function downloadExcel() {
             var h = getActiveHolidays(c, year);
             var core = 0, nc = 0, wk = 0;
             h.forEach(function(x) {
-                if (x.type === 'Core' || x.type === 'Quebec') core++;
+                if (x.type === 'Core') core++;
                 else if (x.type === 'Non-Core' || x.type === 'Suggested') nc++;
                 else if (x.type === 'Weekend Holiday*') wk++;
             });
@@ -3237,7 +3237,7 @@ function downloadExcel() {
             var h = getActiveHolidays(c, year);
             var core = 0, nc = 0, wk = 0;
             h.forEach(function(x) {
-                if (x.type === 'Core' || x.type === 'Quebec') core++;
+                if (x.type === 'Core') core++;
                 else if (x.type === 'Non-Core' || x.type === 'Suggested') nc++;
                 else if (x.type === 'Weekend Holiday*') wk++;
             });
