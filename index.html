@@ -1286,7 +1286,8 @@ function loadComments() {
 }
 
 function postComment(countryKey, dateStr, text) {
-    if (!fbReady || !text.trim()) return;
+    if (!text.trim()) return;
+    if (!fbReady) { alert('Comments require an online connection. Firebase is not connected.'); return; }
     var role = isVP ? 'VP' : (isEditor ? 'Editor' : 'Viewer');
     var commentKey = countryKey + (dateStr ? '_' + dateStr : '_general');
     var ref = fbDb.ref('awayDaysComments/' + commentKey);
@@ -1296,6 +1297,11 @@ function postComment(countryKey, dateStr, text) {
         date: dateStr || null,
         country: countryKey,
         timestamp: firebase.database.ServerValue.TIMESTAMP
+    }).then(function() {
+        console.log('Comment saved to ' + commentKey);
+    }).catch(function(err) {
+        console.error('Comment save failed:', err);
+        alert('Failed to save comment: ' + err.message + '\n\nThis may be a Firebase permissions issue. Please check the database rules allow writes to awayDaysComments.');
     });
 }
 
@@ -1349,8 +1355,26 @@ function buildCommentPanel(countryKey, dateStr) {
 function submitComment(countryKey, dateStr, inputId) {
     var input = document.getElementById(inputId);
     if (!input || !input.value.trim()) return;
-    postComment(countryKey, dateStr || null, input.value);
-    input.value = '';
+    var btn = input.parentNode.querySelector('.comment-send-btn');
+    if (btn) { btn.textContent = 'Sending...'; btn.disabled = true; }
+    var text = input.value;
+    if (!fbReady) { alert('Comments require an online connection.'); if (btn) { btn.textContent = 'Send'; btn.disabled = false; } return; }
+    var role = isVP ? 'VP' : (isEditor ? 'Editor' : 'Viewer');
+    var ck = countryKey + (dateStr ? '_' + dateStr : '_general');
+    fbDb.ref('awayDaysComments/' + ck).push({
+        author: role,
+        text: text.trim(),
+        date: dateStr || null,
+        country: countryKey,
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    }).then(function() {
+        input.value = '';
+        if (btn) { btn.textContent = '✓ Sent'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send'; }, 1500); }
+    }).catch(function(err) {
+        console.error('Comment save failed:', err);
+        if (btn) { btn.textContent = 'Failed'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send'; }, 2000); }
+        alert('Failed to save comment: ' + err.message);
+    });
 }
 
 function renderAllCommentPanels() {
