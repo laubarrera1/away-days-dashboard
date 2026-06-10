@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
@@ -1099,6 +1101,32 @@ body {
     width: 0; height: 0; border-left: 6px solid transparent;
     border-top: 6px solid #3B82F6;
 }
+
+/* Role badge */
+.gdoc-role-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600;
+    display: inline-block; vertical-align: middle; margin-left: 2px;
+}
+.gdoc-role-badge.vp { background: #EDE9FE; color: #7C3AED; }
+.gdoc-role-badge.director { background: #FEF3C7; color: #D97706; }
+.gdoc-role-badge.editor { background: #D1FAE5; color: #059669; }
+.gdoc-role-badge.viewer { background: #F1F5F9; color: #64748B; }
+.gdoc-avatar.director { background: #D97706; }
+
+/* @-mention dropdown */
+.mention-dropdown {
+    position: fixed; z-index: 10001; background: #fff; border: 1px solid #E2E8F0;
+    border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    max-height: 180px; overflow-y: auto;
+}
+.mention-item {
+    padding: 6px 12px; font-size: 12px; color: #1E293B; cursor: pointer;
+    font-family: 'Montserrat', sans-serif;
+}
+.mention-item:hover { background: #EFF6FF; color: #3B82F6; }
+
+/* Always show comment rail */
+.country-comments-rail { display: block; }
 </style>
 <script>var guideData = {};</script>
 </head>
@@ -1162,6 +1190,9 @@ body {
             <div class="sidebar-section">Export</div>
             <button class="sidebar-item" onclick="downloadExcel()" style="cursor:pointer;">
                 <span class="si-icon">📥</span><span class="si-label">Download Excel</span>
+            </button>
+            <button class="sidebar-item" onclick="downloadPDF()" style="cursor:pointer;">
+                <span class="si-icon">📑</span><span class="si-label">Download PDF</span>
             </button>
             <button class="sidebar-item" onclick="downloadGuide()" style="cursor:pointer;">
                 <span class="si-icon">📄</span><span class="si-label">Download Away Days Guide</span>
@@ -1326,19 +1357,139 @@ function requireEditor() {
     return isEditor || checkEditorAuth();
 }
 
-/* ── VP Reviewer Role ───────────────────────────────────────── */
+/* ── Role Detection (VP, Director, Viewer) ─────────────────── */
 var isVP = false;
+var isDirector = false;
 (function() {
     var params = new URLSearchParams(window.location.search);
-    if (params.get('role') === 'vp') {
+    var role = params.get('role');
+    if (role === 'vp') {
         isVP = true;
         document.body.classList.add('vp-mode');
         setTimeout(function() {
             var vpBadge = document.getElementById('vpBadge');
-            if (vpBadge) vpBadge.style.display = 'inline-flex';
+            if (vpBadge) { vpBadge.style.display = 'inline-flex'; vpBadge.textContent = '👁 VP Reviewer'; }
+        }, 100);
+    } else if (role === 'director') {
+        isDirector = true;
+        document.body.classList.add('vp-mode');
+        setTimeout(function() {
+            var vpBadge = document.getElementById('vpBadge');
+            if (vpBadge) { vpBadge.style.display = 'inline-flex'; vpBadge.textContent = '👁 Sr. Director'; }
         }, 100);
     }
 })();
+
+/* ── Commenter Identity (Name + Role) ──────────────────────── */
+var _commenterName = '';
+try { _commenterName = localStorage.getItem('awayDaysCommenterName') || ''; } catch(e) {}
+
+function ensureCommenterName() {
+    if (_commenterName) return _commenterName;
+    var name = prompt('Enter your name to comment:');
+    if (!name || !name.trim()) return null;
+    _commenterName = name.trim();
+    try { localStorage.setItem('awayDaysCommenterName', _commenterName); } catch(e) {}
+    return _commenterName;
+}
+
+function getRole() {
+    if (isVP) return 'VP';
+    if (isDirector) return 'Director';
+    if (isEditor) return 'Editor';
+    return 'Viewer';
+}
+
+function getRoleInitial(role) {
+    if (role === 'VP') return 'VP';
+    if (role === 'Director') return 'D';
+    if (role === 'Editor') return 'E';
+    return 'V';
+}
+
+function getRoleCls(role) {
+    if (role === 'VP') return 'vp';
+    if (role === 'Director') return 'director';
+    if (role === 'Editor') return 'editor';
+    return 'viewer';
+}
+
+/* ── @-mention Support ─────────────────────────────────────── */
+var _knownCommenters = new Set();
+
+function collectKnownCommenters() {
+    _knownCommenters.clear();
+    Object.keys(allComments).forEach(function(ck) {
+        var threads = allComments[ck] || {};
+        Object.keys(threads).forEach(function(tid) {
+            var t = threads[tid];
+            if (t && t.authorName) _knownCommenters.add(t.authorName);
+            if (t && t.replies) {
+                Object.keys(t.replies).forEach(function(rk) {
+                    if (t.replies[rk] && t.replies[rk].authorName) _knownCommenters.add(t.replies[rk].authorName);
+                });
+            }
+        });
+    });
+}
+
+function showMentionDropdown(textarea) {
+    closeMentionDropdown();
+    var names = Array.from(_knownCommenters).sort();
+    if (names.length === 0) return;
+    var rect = textarea.getBoundingClientRect();
+    var dd = document.createElement('div');
+    dd.className = 'mention-dropdown';
+    dd.id = 'mentionDropdown';
+    dd.style.top = (rect.bottom + 2) + 'px';
+    dd.style.left = rect.left + 'px';
+    dd.style.width = Math.min(rect.width, 250) + 'px';
+    names.forEach(function(n) {
+        var item = document.createElement('div');
+        item.className = 'mention-item';
+        item.textContent = '@' + n;
+        item.onmousedown = function(e) {
+            e.preventDefault();
+            var val = textarea.value;
+            var pos = textarea.selectionStart;
+            var before = val.substring(0, pos);
+            var atIdx = before.lastIndexOf('@');
+            if (atIdx >= 0) {
+                textarea.value = before.substring(0, atIdx) + '@' + n + ' ' + val.substring(pos);
+                textarea.selectionStart = textarea.selectionEnd = atIdx + n.length + 2;
+            }
+            closeMentionDropdown();
+            textarea.focus();
+        };
+        dd.appendChild(item);
+    });
+    document.body.appendChild(dd);
+}
+
+function closeMentionDropdown() {
+    var el = document.getElementById('mentionDropdown');
+    if (el) el.remove();
+}
+
+function handleMentionInput(e) {
+    var ta = e.target;
+    var val = ta.value;
+    var pos = ta.selectionStart;
+    var before = val.substring(0, pos);
+    var atIdx = before.lastIndexOf('@');
+    if (atIdx >= 0 && (atIdx === 0 || before[atIdx-1] === ' ' || before[atIdx-1] === '\n')) {
+        var partial = before.substring(atIdx + 1).toLowerCase();
+        if (partial.indexOf(' ') === -1 && partial.length < 30) {
+            showMentionDropdown(ta);
+            return;
+        }
+    }
+    closeMentionDropdown();
+}
+
+function renderMentionText(text) {
+    return esc(text).replace(/@(\w[\w\s]{0,25}?)(?=\s|$|@)/g, '<strong style="color:#3B82F6;">@$1</strong>');
+}
 
 /* ── Comments System (Google Docs-style, Firebase) ──────────── */
 var allComments = {};
@@ -1347,21 +1498,10 @@ function loadComments() {
     if (!fbReady) return;
     fbDb.ref('awayDaysComments').on('value', function(snap) {
         allComments = snap.val() || {};
+        collectKnownCommenters();
         renderCommentsForCurrentTab();
         updateCommentIndicators();
     });
-}
-
-function getRole() {
-    return isVP ? 'VP' : (isEditor ? 'Editor' : 'Viewer');
-}
-
-function getRoleInitial(role) {
-    return role === 'VP' ? 'VP' : (role === 'Editor' ? 'E' : 'V');
-}
-
-function getRoleCls(role) {
-    return role === 'VP' ? 'vp' : (role === 'Editor' ? 'editor' : 'viewer');
 }
 
 function fmtCommentTime(ts) {
@@ -1373,11 +1513,14 @@ function esc(s) { return (s || '').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function postNewComment(countryKey, dateStr, text, cb) {
     if (!text.trim()) return;
+    var name = ensureCommenterName();
+    if (!name) { if (cb) cb(false); return; }
     if (!fbReady) { alert('Comments require an online connection.'); return; }
     var role = getRole();
     var ref = fbDb.ref('awayDaysComments/' + countryKey);
     ref.push({
         author: role,
+        authorName: name,
         text: text.trim(),
         date: dateStr || null,
         resolved: false,
@@ -1392,10 +1535,13 @@ function postNewComment(countryKey, dateStr, text, cb) {
 
 function postReply(countryKey, commentId, text, cb) {
     if (!text.trim() || !fbReady) return;
+    var name = ensureCommenterName();
+    if (!name) { if (cb) cb(false); return; }
     var role = getRole();
     var ref = fbDb.ref('awayDaysComments/' + countryKey + '/' + commentId + '/replies');
     ref.push({
         author: role,
+        authorName: name,
         text: text.trim(),
         timestamp: firebase.database.ServerValue.TIMESTAMP
     }).then(function() { if (cb) cb(true); }).catch(function(err) {
@@ -1432,7 +1578,7 @@ function renderCommentsRail(countryKey) {
     if (!rail) return;
 
     var comments = getCommentsForCountry(countryKey);
-    var canComment = isVP || isEditor;
+    var canComment = true;
     var openCount = comments.filter(function(c) { return !c.resolved; }).length;
 
     var html = '<div class="comment-rail-header">'
@@ -1440,26 +1586,25 @@ function renderCommentsRail(countryKey) {
         + '<span class="comment-rail-count">' + openCount + ' open</span>'
         + '</div>';
 
-    if (canComment) {
-        html += '<div class="gdoc-new-comment">'
-            + '<textarea id="newCommentInput_' + countryKey + '" placeholder="Add a comment..."></textarea>'
-            + '<div class="gdoc-new-comment-footer">'
-            + '<select id="newCommentDate_' + countryKey + '"><option value="">General comment</option></select>'
-            + '<button class="gdoc-new-comment-btn" onclick="submitNewComment(\'' + countryKey + '\')">Comment</button>'
-            + '</div></div>';
-    }
+    html += '<div class="gdoc-new-comment">'
+        + '<textarea id="newCommentInput_' + countryKey + '" placeholder="Add a comment... (type @ to mention)" oninput="handleMentionInput(event)"></textarea>'
+        + '<div class="gdoc-new-comment-footer">'
+        + '<select id="newCommentDate_' + countryKey + '"><option value="">General comment</option></select>'
+        + '<button class="gdoc-new-comment-btn" onclick="submitNewComment(\'' + countryKey + '\')">Comment</button>'
+        + '</div></div>';
 
     var q = String.fromCharCode(39);
     comments.forEach(function(c) {
         var resolvedCls = c.resolved ? ' resolved' : '';
         var avatarCls = getRoleCls(c.author);
-        var initial = getRoleInitial(c.author);
+        var initial = c.authorName ? c.authorName.charAt(0).toUpperCase() : getRoleInitial(c.author);
+        var displayName = c.authorName ? c.authorName : (c.author || 'User');
 
         html += '<div class="gdoc-comment' + resolvedCls + '" data-comment-id="' + c._id + '">';
         html += '<div class="gdoc-comment-header">'
-            + '<div class="gdoc-avatar ' + avatarCls + '">' + initial + '</div>'
+            + '<div class="gdoc-avatar ' + avatarCls + '">' + esc(initial) + '</div>'
             + '<div class="gdoc-author-info">'
-            + '<div class="gdoc-author-name">' + (c.author || 'User') + '</div>'
+            + '<div class="gdoc-author-name">' + esc(displayName) + ' <span class="gdoc-role-badge ' + avatarCls + '">' + (c.author || '') + '</span></div>'
             + '<div class="gdoc-author-time">' + fmtCommentTime(c.timestamp) + '</div>'
             + '</div></div>';
 
@@ -1471,20 +1616,17 @@ function renderCommentsRail(countryKey) {
                 + '📅 ' + mn[dd.getMonth()] + ' ' + dd.getDate() + ' (' + dn[dd.getDay()] + ')</div>';
         }
 
-        html += '<div class="gdoc-comment-body">' + esc(c.text) + '</div>';
+        html += '<div class="gdoc-comment-body">' + renderMentionText(c.text) + '</div>';
 
         html += '<div class="gdoc-comment-actions">';
-        if (canComment) {
-            if (!c.resolved) {
-                html += '<button class="gdoc-resolve-btn" onclick="resolveComment(' + q + countryKey + q + ',' + q + c._id + q + ')">✓ Resolve</button>';
-            } else {
-                html += '<button class="gdoc-resolve-btn" onclick="unresolveComment(' + q + countryKey + q + ',' + q + c._id + q + ')">↩ Re-open</button>';
-            }
-            html += '<button class="gdoc-reply-toggle" onclick="toggleReplyInput(this)">Reply</button>';
+        if (!c.resolved) {
+            html += '<button class="gdoc-resolve-btn" onclick="resolveComment(' + q + countryKey + q + ',' + q + c._id + q + ')">✓ Resolve</button>';
+        } else {
+            html += '<button class="gdoc-resolve-btn" onclick="unresolveComment(' + q + countryKey + q + ',' + q + c._id + q + ')">↩ Re-open</button>';
         }
+        html += '<button class="gdoc-reply-toggle" onclick="toggleReplyInput(this)">Reply</button>';
         html += '</div>';
 
-        // Replies
         var replies = c.replies || {};
         var replyArr = [];
         Object.keys(replies).forEach(function(rk) {
@@ -1496,35 +1638,35 @@ function renderCommentsRail(countryKey) {
         if (replyArr.length > 0) {
             html += '<div class="gdoc-replies">';
             replyArr.forEach(function(r) {
+                var rInitial = r.authorName ? r.authorName.charAt(0).toUpperCase() : getRoleInitial(r.author);
+                var rName = r.authorName ? r.authorName : (r.author || 'User');
                 html += '<div class="gdoc-reply">'
-                    + '<div class="gdoc-reply-avatar ' + getRoleCls(r.author) + '">' + getRoleInitial(r.author) + '</div>'
+                    + '<div class="gdoc-reply-avatar ' + getRoleCls(r.author) + '">' + esc(rInitial) + '</div>'
                     + '<div class="gdoc-reply-content">'
-                    + '<span class="gdoc-reply-author">' + (r.author || 'User') + '</span> '
+                    + '<span class="gdoc-reply-author">' + esc(rName) + '</span> '
+                    + '<span class="gdoc-role-badge ' + getRoleCls(r.author) + '" style="font-size:8px;">' + (r.author || '') + '</span> '
                     + '<span class="gdoc-reply-time">' + fmtCommentTime(r.timestamp) + '</span>'
-                    + '<div class="gdoc-reply-text">' + esc(r.text) + '</div>'
+                    + '<div class="gdoc-reply-text">' + renderMentionText(r.text) + '</div>'
                     + '</div></div>';
             });
             html += '</div>';
         }
 
-        if (canComment) {
-            html += '<div class="gdoc-reply-input-row" style="display:none;">'
-                + '<textarea class="gdoc-reply-input" placeholder="Reply..." rows="1"></textarea>'
-                + '<button class="gdoc-reply-send" onclick="submitReply(this,' + q + countryKey + q + ',' + q + c._id + q + ')">↵</button>'
-                + '</div>';
-        }
+        html += '<div class="gdoc-reply-input-row" style="display:none;">'
+            + '<textarea class="gdoc-reply-input" placeholder="Reply... (type @ to mention)" rows="1" oninput="handleMentionInput(event)"></textarea>'
+            + '<button class="gdoc-reply-send" onclick="submitReply(this,' + q + countryKey + q + ',' + q + c._id + q + ')">↵</button>'
+            + '</div>';
 
         html += '</div>';
     });
 
-    if (comments.length === 0 && !canComment) {
-        html += '<div style="text-align:center;color:#94A3B8;font-size:12px;padding:20px;">No comments yet</div>';
+    if (comments.length === 0) {
+        html += '<div style="text-align:center;color:#94A3B8;font-size:12px;padding:20px;">No comments yet. Be the first!</div>';
     }
 
     rail.innerHTML = html;
-    if (comments.length > 0 || canComment) rail.classList.add('has-comments');
+    rail.classList.add('has-comments');
 
-    // Populate date dropdown with calendar dates
     populateCommentDateDropdown(countryKey);
 }
 
@@ -3202,7 +3344,7 @@ function initPresence() {
     if (!fbReady) return;
     var presenceRef = fbDb.ref('awayDaysPresence');
     var connRef = fbDb.ref('.info/connected');
-    var name = isVP ? 'VP Reviewer' : (isEditor ? 'Editor' : 'Viewer');
+    var name = isVP ? 'VP Reviewer' : (isDirector ? 'Sr. Director' : (isEditor ? 'Editor' : 'Viewer'));
 
     connRef.on('value', function(snap) {
         if (snap.val() !== true) return;
@@ -3225,7 +3367,7 @@ function initPresence() {
 
 function updatePresenceName() {
     if (!fbReady || !_myPresenceKey) return;
-    var name = isVP ? 'VP Reviewer' : (isEditor ? 'Editor' : 'Viewer');
+    var name = isVP ? 'VP Reviewer' : (isDirector ? 'Sr. Director' : (isEditor ? 'Editor' : 'Viewer'));
     fbDb.ref('awayDaysPresence/' + _myPresenceKey).update({
         name: name,
         isEditor: isEditor,
@@ -3535,6 +3677,93 @@ function dateToSerial(dateStr) {
     var dt = new Date(y, m, d);
     var epoch = new Date(1899, 11, 30);
     return Math.round((dt - epoch) / 86400000);
+}
+
+/* ── Download PDF ──────────────────────────────────────────────── */
+function downloadPDF() {
+    if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
+        alert('PDF libraries not loaded. Please check your internet connection and refresh.');
+        return;
+    }
+    var { jsPDF } = jspdf;
+    var pdf = new jsPDF('l', 'mm', 'a4');
+    var pageW = 297, pageH = 210;
+    var year = currentYear;
+
+    // Cover page
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(36);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text('Away Days ' + year, pageW / 2, 80, { align: 'center' });
+    pdf.setFontSize(16);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text('Executive Summary & Calendar', pageW / 2, 95, { align: 'center' });
+    pdf.setFontSize(10);
+    pdf.text('Generated ' + new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}), pageW / 2, 110, { align: 'center' });
+
+    var countries = Object.keys(countryConfigs);
+    var statusEl = document.createElement('div');
+    statusEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1E293B;color:#fff;padding:20px 40px;border-radius:12px;z-index:99999;font-family:Montserrat,sans-serif;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,0.3);';
+    statusEl.textContent = 'Generating PDF...';
+    document.body.appendChild(statusEl);
+
+    // Capture exec summary
+    var execEl = document.getElementById('execContent');
+
+    function captureElement(el, label) {
+        return html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' }).then(function(canvas) {
+            pdf.addPage();
+            if (label) {
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(18);
+                pdf.setTextColor(30, 41, 59);
+                pdf.text(label, 14, 18);
+            }
+            var imgData = canvas.toDataURL('image/png');
+            var ratio = canvas.width / canvas.height;
+            var imgW = pageW - 28;
+            var imgH = imgW / ratio;
+            if (imgH > pageH - 35) { imgH = pageH - 35; imgW = imgH * ratio; }
+            pdf.addImage(imgData, 'PNG', 14, label ? 24 : 10, imgW, imgH);
+        });
+    }
+
+    // Show exec tab to capture it
+    var origTab = currentTab;
+    showTab('exec');
+
+    setTimeout(function() {
+        var chain = Promise.resolve();
+
+        if (execEl) {
+            chain = chain.then(function() {
+                statusEl.textContent = 'Capturing Executive Summary...';
+                return captureElement(execEl, year + ' Away Day — Executive Summary');
+            });
+        }
+
+        countries.forEach(function(ck, idx) {
+            chain = chain.then(function() {
+                statusEl.textContent = 'Capturing ' + (countryConfigs[ck].label || ck) + ' (' + (idx+1) + '/' + countries.length + ')...';
+                showTab(ck);
+                return new Promise(function(res) { setTimeout(res, 300); });
+            }).then(function() {
+                var calEl = document.querySelector('#tab-' + ck + ' .country-right');
+                if (calEl) return captureElement(calEl, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days');
+            });
+        });
+
+        chain.then(function() {
+            showTab(origTab);
+            statusEl.remove();
+            pdf.save('Away Days ' + year + '.pdf');
+        }).catch(function(err) {
+            statusEl.remove();
+            showTab(origTab);
+            alert('PDF generation failed: ' + err.message);
+            console.error(err);
+        });
+    }, 500);
 }
 
 /* ── Download Excel (WIP structure) ────────────────────────────── */
