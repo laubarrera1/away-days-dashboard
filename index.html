@@ -1194,9 +1194,6 @@ body {
             <button class="sidebar-item" onclick="downloadPDF()" style="cursor:pointer;">
                 <span class="si-icon">📑</span><span class="si-label">Download PDF</span>
             </button>
-            <button class="sidebar-item" onclick="downloadGuide()" style="cursor:pointer;">
-                <span class="si-icon">📄</span><span class="si-label">Download Away Days Guide</span>
-            </button>
         </nav>
     </aside>
 
@@ -3749,7 +3746,17 @@ function downloadPDF() {
                 return new Promise(function(res) { setTimeout(res, 300); });
             }).then(function() {
                 var calEl = document.querySelector('#tab-' + ck + ' .country-right');
-                if (calEl) return captureElement(calEl, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days');
+                if (!calEl) return;
+                // Hide the Away Days swap / suggested calendar section while capturing
+                var suggestEl = document.getElementById('countrySuggest_' + ck);
+                var prevDisplay = null;
+                if (suggestEl) { prevDisplay = suggestEl.style.display; suggestEl.style.display = 'none'; }
+                return captureElement(calEl, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days').then(function() {
+                    if (suggestEl) suggestEl.style.display = prevDisplay || '';
+                }, function(err) {
+                    if (suggestEl) suggestEl.style.display = prevDisplay || '';
+                    throw err;
+                });
             });
         });
 
