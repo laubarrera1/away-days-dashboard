@@ -3682,79 +3682,104 @@ function downloadPDF() {
         alert('PDF libraries not loaded. Please check your internet connection and refresh.');
         return;
     }
-    var { jsPDF } = jspdf;
+    var jsPDF = jspdf.jsPDF;
     var pdf = new jsPDF('l', 'mm', 'a4');
-    var pageW = 297, pageH = 210;
     var year = currentYear;
 
-    // Cover page
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(36);
-    pdf.setTextColor(30, 41, 59);
-    pdf.text('Away Days ' + year, pageW / 2, 80, { align: 'center' });
-    pdf.setFontSize(16);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('Executive Summary & Calendar', pageW / 2, 95, { align: 'center' });
-    pdf.setFontSize(10);
-    pdf.text('Generated ' + new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}), pageW / 2, 110, { align: 'center' });
-
-    var countries = Object.keys(countryConfigs);
     var statusEl = document.createElement('div');
     statusEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1E293B;color:#fff;padding:20px 40px;border-radius:12px;z-index:99999;font-family:Montserrat,sans-serif;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,0.3);';
-    statusEl.textContent = 'Generating PDF...';
+    statusEl.textContent = 'Generating PDF…';
     document.body.appendChild(statusEl);
 
-    // Capture exec summary
-    var execEl = document.getElementById('execContent');
+    // ── Cover page (landscape) ──
+    var cw = pdf.internal.pageSize.getWidth();
+    var chh = pdf.internal.pageSize.getHeight();
+    pdf.setFillColor(31, 78, 121);
+    pdf.rect(0, 0, cw, chh, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(44);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text('Away Days ' + year, cw / 2, chh / 2 - 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(15);
+    pdf.setTextColor(203, 213, 225);
+    pdf.text('Executive Summary & Country Calendars', cw / 2, chh / 2 + 8, { align: 'center' });
+    pdf.setFontSize(10);
+    pdf.text('Generated ' + new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}), cw / 2, chh - 18, { align: 'center' });
 
-    function captureElement(el, label) {
-        return html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' }).then(function(canvas) {
-            pdf.addPage();
-            if (label) {
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(18);
-                pdf.setTextColor(30, 41, 59);
-                pdf.text(label, 14, 18);
-            }
-            var imgData = canvas.toDataURL('image/png');
-            var ratio = canvas.width / canvas.height;
-            var imgW = pageW - 28;
-            var imgH = imgW / ratio;
-            if (imgH > pageH - 35) { imgH = pageH - 35; imgW = imgH * ratio; }
-            pdf.addImage(imgData, 'PNG', 14, label ? 24 : 10, imgW, imgH);
-        });
+    // Add a captured element as its own page, contained & centered (no distortion)
+    function addImagePage(canvas, label, orientation) {
+        pdf.addPage('a4', orientation);
+        var pw = pdf.internal.pageSize.getWidth();
+        var ph = pdf.internal.pageSize.getHeight();
+        var margin = 12;
+        var top = margin;
+        if (label) {
+            pdf.setFillColor(31, 78, 121);
+            pdf.rect(0, 0, pw, 14, 'F');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.setTextColor(255, 255, 255);
+            pdf.text(label, margin, 9.3);
+            top = 14 + 6;
+        }
+        var availW = pw - margin * 2;
+        var availH = ph - top - margin;
+        var ratio = canvas.width / canvas.height;
+        var imgW = availW;
+        var imgH = imgW / ratio;
+        if (imgH > availH) { imgH = availH; imgW = imgH * ratio; }
+        var x = (pw - imgW) / 2;
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, top, imgW, imgH);
     }
 
-    // Show exec tab to capture it
+    function capture(el) {
+        return html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 });
+    }
+
+    var countries = Object.keys(countryConfigs);
     var origTab = currentTab;
     showTab('exec');
 
     setTimeout(function() {
         var chain = Promise.resolve();
+        var execEl = document.getElementById('execContent');
 
         if (execEl) {
             chain = chain.then(function() {
-                statusEl.textContent = 'Capturing Executive Summary...';
-                return captureElement(execEl, year + ' Away Day — Executive Summary');
+                statusEl.textContent = 'Capturing Executive Summary…';
+                return capture(execEl).then(function(canvas) {
+                    addImagePage(canvas, year + ' Away Day — Executive Summary', 'l');
+                });
             });
         }
 
         countries.forEach(function(ck, idx) {
             chain = chain.then(function() {
-                statusEl.textContent = 'Capturing ' + (countryConfigs[ck].label || ck) + ' (' + (idx+1) + '/' + countries.length + ')...';
+                statusEl.textContent = 'Capturing ' + (countryConfigs[ck].label || ck) + ' (' + (idx+1) + '/' + countries.length + ')…';
                 showTab(ck);
-                return new Promise(function(res) { setTimeout(res, 300); });
+                return new Promise(function(res) { setTimeout(res, 450); });
             }).then(function() {
-                var calEl = document.querySelector('#tab-' + ck + ' .country-right');
+                var tabEl = document.getElementById('tab-' + ck);
+                var calEl = tabEl ? tabEl.querySelector('.country-right') : null;
                 if (!calEl) return;
-                // Hide the Away Days swap / suggested calendar section while capturing
+                // Temporarily hide the swap section, left list & comments rail so the
+                // calendar expands to full width for a clean, large capture.
+                var hidden = [];
                 var suggestEl = document.getElementById('countrySuggest_' + ck);
-                var prevDisplay = null;
-                if (suggestEl) { prevDisplay = suggestEl.style.display; suggestEl.style.display = 'none'; }
-                return captureElement(calEl, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days').then(function() {
-                    if (suggestEl) suggestEl.style.display = prevDisplay || '';
+                if (suggestEl) { hidden.push([suggestEl, suggestEl.style.display]); suggestEl.style.display = 'none'; }
+                var leftEl = tabEl.querySelector('.country-left');
+                if (leftEl) { hidden.push([leftEl, leftEl.style.display]); leftEl.style.display = 'none'; }
+                var railEl = tabEl.querySelector('.country-comments-rail');
+                if (railEl) { hidden.push([railEl, railEl.style.display]); railEl.style.display = 'none'; }
+                function restore() { hidden.forEach(function(h) { h[0].style.display = h[1] || ''; }); }
+                return new Promise(function(res) { setTimeout(res, 150); }).then(function() {
+                    return capture(calEl);
+                }).then(function(canvas) {
+                    restore();
+                    addImagePage(canvas, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days', 'p');
                 }, function(err) {
-                    if (suggestEl) suggestEl.style.display = prevDisplay || '';
+                    restore();
                     throw err;
                 });
             });
@@ -3770,7 +3795,7 @@ function downloadPDF() {
             alert('PDF generation failed: ' + err.message);
             console.error(err);
         });
-    }, 500);
+    }, 600);
 }
 
 /* ── Download Excel (WIP structure) ────────────────────────────── */
