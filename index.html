@@ -3676,7 +3676,85 @@ function dateToSerial(dateStr) {
     return Math.round((dt - epoch) / 86400000);
 }
 
-/* ── Download PDF ──────────────────────────────────────────────── */
+/* ── Download PDF (Proposal deck style) ────────────────────────── */
+var PDF_REGION = { US:'AMERICAS', Canada:'AMERICAS', Poland:'EMEA & APAC', Spain:'EMEA & APAC', UK:'EMEA & APAC', Australia:'EMEA & APAC', Netherlands:'EMEA & APAC' };
+var PDF_NOTES = {
+    US: 'The calendar is mostly anchored on Federal or national holidays.',
+    Canada: 'The calendar is mostly anchored on statutory or national holidays. June 24th is a provincial Quebec holiday - only Affirmers in Quebec receive this additional Away Day.',
+    Poland: 'This offering matches the number of days we offered last year. The calendar is mostly anchored on statutory or national holidays. The Away Days allotment is part of contractual privileges.',
+    Spain: 'This offering matches the number of days we offered last year. The calendar is mostly anchored on statutory or national holidays. Away Days for Spain cover national and regional Madrid holidays.',
+    UK: 'This offering matches the number of days we offered last year. The calendar is mostly anchored on statutory or national holidays.',
+    Australia: 'The calendar is mostly anchored on statutory or national holidays, with a few extra days aligning to the Americas.',
+    Netherlands: 'Aligned with Spain and the UK. The calendar is mostly anchored on statutory or national holidays.'
+};
+var PDF_BCRIT = { US: ['Business Critical Periods:', 'July 6 - July 14: Amazon Prime Days', 'Nov 27 & Nov 30: Black Friday & Cyber Monday'] };
+
+function pdfDrawArc(pdf, cx, cy, r, color, lineW) {
+    pdf.setDrawColor(color[0], color[1], color[2]);
+    pdf.setLineWidth(lineW);
+    try { pdf.setLineCap('round'); } catch(e) {}
+    var prev = null;
+    for (var i = 0; i <= 48; i++) {
+        var t = Math.PI * (i / 48);
+        var x = cx - r * Math.cos(t);
+        var y = cy - r * Math.sin(t);
+        if (prev) pdf.line(prev[0], prev[1], x, y);
+        prev = [x, y];
+    }
+}
+
+function pdfCountryPage(pdf, ck, year, canvas, PW, PH) {
+    pdf.addPage('a4', 'l');
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, PW, PH, 'F');
+    var cfg = countryConfigs[ck] || {};
+    var mL = 18;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(31, 78, 121);
+    pdf.text((PDF_REGION[ck] || '').toUpperCase(), mL, 26);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(30);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(cfg.label || ck, mL, 40);
+
+    var hols = getActiveHolidays(ck, year).filter(function(h) { return h.type !== 'Weekend Holiday*' && h.type !== 'DNS'; });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(13);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('Total Away Days: ', mL, 54);
+    var tw = pdf.getTextWidth('Total Away Days: ');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(String(hols.length), mL + tw, 54);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(pdf.splitTextToSize(PDF_NOTES[ck] || '', 88), mL, 66);
+
+    var bc = PDF_BCRIT[ck];
+    if (bc) {
+        var by = PH - 42;
+        pdf.setFont('helvetica', 'bolditalic');
+        pdf.setFontSize(9);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(bc[0], mL, by);
+        pdf.setFont('helvetica', 'normal');
+        for (var i = 1; i < bc.length; i++) { pdf.text(bc[i], mL, by + i * 5); }
+    }
+
+    var boxX = 116, boxY = 16, boxW = PW - boxX - 12, boxH = PH - 30;
+    var ratio = canvas.width / canvas.height;
+    var iw = boxW, ih = iw / ratio;
+    if (ih > boxH) { ih = boxH; iw = ih * ratio; }
+    var x = boxX + (boxW - iw) / 2;
+    var y = boxY + (boxH - ih) / 2;
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, iw, ih);
+}
+
 function downloadPDF() {
     if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
         alert('PDF libraries not loaded. Please check your internet connection and refresh.');
@@ -3685,99 +3763,102 @@ function downloadPDF() {
     var jsPDF = jspdf.jsPDF;
     var pdf = new jsPDF('l', 'mm', 'a4');
     var year = currentYear;
+    var PW = pdf.internal.pageSize.getWidth();
+    var PH = pdf.internal.pageSize.getHeight();
 
     var statusEl = document.createElement('div');
     statusEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1E293B;color:#fff;padding:20px 40px;border-radius:12px;z-index:99999;font-family:Montserrat,sans-serif;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,0.3);';
     statusEl.textContent = 'Generating PDF…';
     document.body.appendChild(statusEl);
 
-    // ── Cover page (landscape) ──
-    var cw = pdf.internal.pageSize.getWidth();
-    var chh = pdf.internal.pageSize.getHeight();
-    pdf.setFillColor(31, 78, 121);
-    pdf.rect(0, 0, cw, chh, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(44);
-    pdf.setTextColor(255, 255, 255);
-    pdf.text('Away Days ' + year, cw / 2, chh / 2 - 6, { align: 'center' });
+    // ── Title page (black, branded) ──
+    pdf.setFillColor(0, 0, 0);
+    pdf.rect(0, 0, PW, PH, 'F');
+    pdfDrawArc(pdf, PW / 2, PH / 2 - 26, 17, [245, 166, 35], 2.4);
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(15);
-    pdf.setTextColor(203, 213, 225);
-    pdf.text('Executive Summary & Country Calendars', cw / 2, chh / 2 + 8, { align: 'center' });
+    pdf.setFontSize(48);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text('Away Days ' + year, PW / 2, PH / 2 + 2, { align: 'center' });
+    pdf.setFontSize(18);
+    pdf.setTextColor(150, 160, 175);
+    pdf.text('Proposal', PW / 2, PH / 2 + 17, { align: 'center' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(20);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text('affirm', PW / 2, PH - 22, { align: 'center' });
+    pdfDrawArc(pdf, PW / 2 + 13.5, PH - 27.2, 2.3, [124, 92, 255], 1.1);
+
+    // ── Philosophy & Recommendation ──
+    pdf.addPage('a4', 'l');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(20);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('Away Days Philosophy and Recommendation', 18, 24);
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.4);
+    pdf.line(18, 28, PW - 18, 28);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(31, 78, 121);
+    pdf.text('Philosophy', 18, 40);
+    pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
-    pdf.text('Generated ' + new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'}), cw / 2, chh - 18, { align: 'center' });
+    pdf.setTextColor(71, 85, 105);
+    var philo = 'Away Days are a foundational program on which our differentiated benefits program was built.\n\nThey improve work/life balance, reduce burnout, help with caregiving pressures, and give Affirmers space for focused work.\n\nTime off ranks in the top 3 programs that drive employee retention. When planning Away Days, we align schedules across countries to minimize team disruption.';
+    pdf.text(pdf.splitTextToSize(philo, 120), 18, 48);
 
-    // Add a captured element as its own page, contained & centered (no distortion)
-    function addImagePage(canvas, label, orientation) {
-        pdf.addPage('a4', orientation);
-        var pw = pdf.internal.pageSize.getWidth();
-        var ph = pdf.internal.pageSize.getHeight();
-        var margin = 12;
-        var top = margin;
-        if (label) {
-            pdf.setFillColor(31, 78, 121);
-            pdf.rect(0, 0, pw, 14, 'F');
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(12);
-            pdf.setTextColor(255, 255, 255);
-            pdf.text(label, margin, 9.3);
-            top = 14 + 6;
-        }
-        var availW = pw - margin * 2;
-        var availH = ph - top - margin;
-        var ratio = canvas.width / canvas.height;
-        var imgW = availW;
-        var imgH = imgW / ratio;
-        if (imgH > availH) { imgH = availH; imgW = imgH * ratio; }
-        var x = (pw - imgW) / 2;
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, top, imgW, imgH);
-    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(31, 78, 121);
+    pdf.text('Recommendation', 152, 40);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(71, 85, 105);
+    var rec = 'For ' + year + ', the recommended Away Days are based on the following:\n\n-  No changes to the number of Away Days per country\n-  Observing all statutory / federally-observed holidays as core Away Days\n-  Minimizing Away Days around business-critical periods (Amazon Prime Days, Black Friday & Cyber Monday)\n-  Non-core Away Days that minimize productivity loss';
+    pdf.text(pdf.splitTextToSize(rec, 127), 152, 48);
 
-    function capture(el) {
-        return html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 });
-    }
+    // ── Section divider ──
+    pdf.addPage('a4', 'l');
+    pdf.setFillColor(15, 23, 42);
+    pdf.rect(0, 0, PW, PH, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(34);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(year + ' Away Days', PW / 2, PH / 2 - 3, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(16);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('Calendar per country', PW / 2, PH / 2 + 11, { align: 'center' });
 
+    // ── Country pages ──
     var countries = Object.keys(countryConfigs);
     var origTab = currentTab;
     showTab('exec');
 
     setTimeout(function() {
         var chain = Promise.resolve();
-        var execEl = document.getElementById('execContent');
-
-        if (execEl) {
-            chain = chain.then(function() {
-                statusEl.textContent = 'Capturing Executive Summary…';
-                return capture(execEl).then(function(canvas) {
-                    addImagePage(canvas, year + ' Away Day — Executive Summary', 'l');
-                });
-            });
-        }
-
         countries.forEach(function(ck, idx) {
             chain = chain.then(function() {
-                statusEl.textContent = 'Capturing ' + (countryConfigs[ck].label || ck) + ' (' + (idx+1) + '/' + countries.length + ')…';
+                statusEl.textContent = 'Building ' + (countryConfigs[ck].label || ck) + ' (' + (idx+1) + '/' + countries.length + ')…';
                 showTab(ck);
                 return new Promise(function(res) { setTimeout(res, 450); });
             }).then(function() {
                 var tabEl = document.getElementById('tab-' + ck);
-                var calEl = tabEl ? tabEl.querySelector('.country-right') : null;
+                var calEl = tabEl ? tabEl.querySelector('.cal-grid-placeholder') : null;
                 if (!calEl) return;
-                // Temporarily hide the swap section, left list & comments rail so the
-                // calendar expands to full width for a clean, large capture.
+                // Expand the calendar to full width for a crisp capture
                 var hidden = [];
-                var suggestEl = document.getElementById('countrySuggest_' + ck);
-                if (suggestEl) { hidden.push([suggestEl, suggestEl.style.display]); suggestEl.style.display = 'none'; }
-                var leftEl = tabEl.querySelector('.country-left');
-                if (leftEl) { hidden.push([leftEl, leftEl.style.display]); leftEl.style.display = 'none'; }
-                var railEl = tabEl.querySelector('.country-comments-rail');
-                if (railEl) { hidden.push([railEl, railEl.style.display]); railEl.style.display = 'none'; }
+                ['.country-left', '.country-comments-rail', '.legal-note-box', '.country-suggest-section'].forEach(function(sel) {
+                    var e = tabEl.querySelector(sel);
+                    if (e) { hidden.push([e, e.style.display]); e.style.display = 'none'; }
+                });
                 function restore() { hidden.forEach(function(h) { h[0].style.display = h[1] || ''; }); }
-                return new Promise(function(res) { setTimeout(res, 150); }).then(function() {
-                    return capture(calEl);
+                return new Promise(function(res) { setTimeout(res, 130); }).then(function() {
+                    return html2canvas(calEl, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 });
                 }).then(function(canvas) {
                     restore();
-                    addImagePage(canvas, (countryConfigs[ck].emoji || '') + ' ' + (countryConfigs[ck].label || ck) + ' — ' + year + ' Away Days', 'p');
+                    pdfCountryPage(pdf, ck, year, canvas, PW, PH);
                 }, function(err) {
                     restore();
                     throw err;
@@ -3788,7 +3869,7 @@ function downloadPDF() {
         chain.then(function() {
             showTab(origTab);
             statusEl.remove();
-            pdf.save('Away Days ' + year + '.pdf');
+            pdf.save('Away Days ' + year + ' Proposal.pdf');
         }).catch(function(err) {
             statusEl.remove();
             showTab(origTab);
