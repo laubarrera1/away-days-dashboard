@@ -978,7 +978,8 @@ body {
 /* Google Docs-style Comments Rail */
 .country-comments-rail {
     flex: 0 0 280px; min-width: 260px; max-height: calc(100vh - 120px);
-    overflow-y: auto; padding-left: 16px; display: none;
+    overflow-y: auto; overflow-x: hidden; padding-left: 16px; display: none;
+    box-sizing: border-box;
 }
 .country-comments-rail.has-comments, .vp-mode .country-comments-rail, .editor-mode .country-comments-rail {
     display: block;
@@ -1072,22 +1073,24 @@ body {
 /* New comment input at top of rail */
 .gdoc-new-comment {
     background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;
-    padding: 10px 12px; margin-bottom: 12px;
+    padding: 10px 12px; margin-bottom: 12px; box-sizing: border-box;
 }
 .gdoc-new-comment textarea {
     width: 100%; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px;
-    font-size: 12px; font-family: 'Montserrat', sans-serif; resize: none;
-    min-height: 60px; outline: none; margin-bottom: 6px;
+    font-size: 12px; font-family: 'Montserrat', sans-serif; resize: vertical;
+    min-height: 60px; outline: none; margin-bottom: 8px; box-sizing: border-box;
 }
 .gdoc-new-comment textarea:focus { border-color: #3B82F6; }
 .gdoc-new-comment-footer {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; gap: 8px;
 }
 .gdoc-new-comment-footer select {
-    border: 1px solid #E2E8F0; border-radius: 5px; padding: 4px 6px; font-size: 11px;
+    flex: 1; min-width: 0; box-sizing: border-box;
+    border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 6px; font-size: 11px;
     font-family: 'Montserrat', sans-serif; color: #475569;
 }
 .gdoc-new-comment-btn {
+    flex-shrink: 0; white-space: nowrap;
     padding: 6px 14px; background: #3B82F6; color: #fff; border: none;
     border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
     font-family: 'Montserrat', sans-serif;
