@@ -12,6 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -1237,6 +1238,9 @@ body.auth-locked #authGate { display: flex; }
 }
 .admin-remove-btn:hover { background: #FEE2E2; }
 .admin-empty { padding: 24px; text-align: center; color: #94A3B8; font-size: 13px; }
+.admin-notice { margin: 0 22px 8px 22px; padding: 9px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+.admin-notice.ok { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+.admin-notice.warn { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
 .role-pill { font-size: 9px; padding: 2px 7px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
 .role-pill.admin { background: #EDE9FE; color: #7C3AED; }
 .role-pill.editor { background: #D1FAE5; color: #059669; }
@@ -1285,6 +1289,7 @@ body.auth-locked #authGate { display: flex; }
             </select>
             <button class="admin-add-btn" onclick="adminAddPerson()">Add</button>
         </div>
+        <div id="adminNotice" class="admin-notice" style="display:none;"></div>
         <div class="admin-list" id="adminList"></div>
     </div>
 </div>
@@ -1500,6 +1505,32 @@ try {
     }
 } catch(e) { console.warn('Firebase init failed, falling back to localStorage:', e); }
 
+/* ── EmailJS (automatic invite emails) ───────────────────────── */
+var EMAILJS_CONFIG = {"publicKey": "", "serviceId": "", "templateId": ""};
+var emailjsReady = false;
+try {
+    if (EMAILJS_CONFIG && EMAILJS_CONFIG.publicKey && typeof emailjs !== 'undefined') {
+        emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
+        emailjsReady = !!(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templateId);
+    }
+} catch(e) { console.warn('EmailJS init failed:', e); }
+
+function sendInviteEmail(toEmail, role, cb) {
+    if (!emailjsReady) { if (cb) cb(false, 'not-configured'); return; }
+    var params = {
+        to_email: toEmail,
+        email: toEmail,
+        role: role,
+        role_label: role.charAt(0).toUpperCase() + role.slice(1),
+        invited_by: (currentUser && (currentUser.displayName || currentUser.email)) || 'An admin',
+        dashboard_link: 'https://laubarrera1.github.io/away-days-dashboard/',
+        message: 'You have been given ' + role + ' access to the Away Days dashboard.'
+    };
+    emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, params)
+        .then(function() { if (cb) cb(true); })
+        .catch(function(err) { console.error('Invite email failed:', err); if (cb) cb(false, (err && err.text) || 'send-failed'); });
+}
+
 /* ── Google Auth + Role-Based Access Control ─────────────────── */
 var fbAuth = null;
 try { if (fbReady) fbAuth = firebase.auth(); } catch(e) { console.warn('Auth init failed:', e); }
@@ -1687,6 +1718,8 @@ function adminAddPerson() {
     var role = roleEl.value;
     if (!email || email.indexOf('@') === -1) { alert('Enter a valid email address.'); return; }
     if (ROLE_OPTIONS.indexOf(role) === -1) role = 'viewer';
+    var addBtn = document.querySelector('.admin-add-btn');
+    if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Adding...'; }
     fbDb.ref('awayDaysAccess/' + emailKey(email)).set({
         email: email,
         name: email.split('@')[0],
@@ -1696,7 +1729,20 @@ function adminAddPerson() {
     }).then(function() {
         emailEl.value = '';
         renderAdminList();
-    }).catch(function(err) { alert('Could not add person: ' + err.message); });
+        sendInviteEmail(email, role, function(ok, reason) {
+            if (addBtn) { addBtn.disabled = false; addBtn.textContent = 'Add'; }
+            if (ok) {
+                showAdminNotice('✓ ' + email + ' added and invite email sent.', 'ok');
+            } else if (reason === 'not-configured') {
+                showAdminNotice('✓ ' + email + ' added. (Email invites are not set up yet — share the link manually.)', 'warn');
+            } else {
+                showAdminNotice('✓ ' + email + ' added, but the invite email failed to send. Share the link manually.', 'warn');
+            }
+        });
+    }).catch(function(err) {
+        if (addBtn) { addBtn.disabled = false; addBtn.textContent = 'Add'; }
+        alert('Could not add person: ' + err.message);
+    });
 }
 
 function adminChangeRole(key, role) {
@@ -1716,6 +1762,16 @@ function adminRemovePerson(key, email) {
     fbDb.ref('awayDaysAccess/' + key).remove().then(function() {
         renderAdminList();
     }).catch(function(err) { alert('Could not remove: ' + err.message); });
+}
+
+function showAdminNotice(msg, kind) {
+    var el = document.getElementById('adminNotice');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'admin-notice ' + (kind === 'ok' ? 'ok' : 'warn');
+    el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(function() { el.style.display = 'none'; }, 6000);
 }
 
 function renderAdminList() {
