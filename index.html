@@ -1573,7 +1573,23 @@ function onAuthorized() {
         try { initPresence(); } catch(e) {}
         try { loadComments(); } catch(e) {}
     }
+    ensureBootstrapRecord();
     renderCommentsForCurrentTab();
+}
+
+// Make sure a bootstrap admin appears in the People list on first sign-in.
+function ensureBootstrapRecord() {
+    if (!fbReady || !currentUser || !currentUser.email) return;
+    var e = currentUser.email.toLowerCase();
+    if (BOOTSTRAP_ADMINS.indexOf(e) === -1) return;
+    if (accessList[emailKey(e)]) return;
+    fbDb.ref('awayDaysAccess/' + emailKey(e)).set({
+        email: e,
+        name: currentUser.displayName || e.split('@')[0],
+        role: 'admin',
+        addedBy: 'system',
+        addedAt: firebase.database.ServerValue.TIMESTAMP
+    }).catch(function(err) { console.warn('Bootstrap record write failed:', err); });
 }
 
 function updateAccountChip() {
