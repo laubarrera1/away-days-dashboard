@@ -1250,6 +1250,69 @@ body.auth-locked #authGate { display: flex; }
 .gdoc-avatar.commenter { background: #2563EB; }
 .gdoc-role-badge.admin { background: #EDE9FE; color: #7C3AED; }
 .gdoc-role-badge.commenter { background: #DBEAFE; color: #2563EB; }
+
+/* ── Change indicator dot on calendar cells ──────────────────── */
+td.cal-changed { position: relative; }
+td.cal-changed::before {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #F97316; box-shadow: 0 0 4px rgba(249,115,22,0.5);
+    z-index: 2; pointer-events: none;
+}
+
+/* ── Changes / Activity panel ────────────────────────────────── */
+#changesModal {
+    position: fixed; inset: 0; z-index: 99000; display: none;
+    align-items: center; justify-content: center; background: rgba(15,23,42,0.55);
+    font-family: 'Montserrat', sans-serif;
+}
+#changesModal.open { display: flex; }
+.changes-card {
+    background: #fff; border-radius: 16px; width: 520px; max-width: 94vw; max-height: 86vh;
+    overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 24px 70px rgba(0,0,0,0.4);
+}
+.changes-head {
+    padding: 18px 22px; border-bottom: 1px solid #E2E8F0;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.changes-head h3 { font-size: 17px; color: #0F172A; }
+.changes-close { background: none; border: none; font-size: 20px; color: #94A3B8; cursor: pointer; }
+.changes-body { overflow-y: auto; padding: 12px 22px 18px 22px; }
+.changes-empty { padding: 30px; text-align: center; color: #94A3B8; font-size: 13px; }
+.change-item {
+    display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F1F5F9;
+    align-items: flex-start;
+}
+.change-item:last-child { border-bottom: none; }
+.change-avatar {
+    width: 28px; height: 28px; border-radius: 50%; background: #3B82F6;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0;
+    margin-top: 2px;
+}
+.change-info { flex: 1; min-width: 0; }
+.change-who { font-size: 12px; font-weight: 700; color: #1E293B; }
+.change-what { font-size: 12px; color: #475569; line-height: 1.4; margin-top: 2px; }
+.change-when { font-size: 10px; color: #94A3B8; margin-top: 2px; }
+.change-new { position: relative; }
+.change-new::after {
+    content: 'NEW'; position: absolute; top: 10px; right: 0;
+    font-size: 8px; font-weight: 800; color: #F97316; background: #FFF7ED;
+    padding: 1px 5px; border-radius: 3px; border: 1px solid #FDBA74;
+}
+
+/* Notification bell in sidebar */
+.notif-btn {
+    position: relative; background: none; border: none; cursor: pointer; font-size: 18px;
+    padding: 4px; line-height: 1;
+}
+.notif-badge {
+    position: absolute; top: -2px; right: -4px; min-width: 16px; height: 16px;
+    border-radius: 8px; background: #EF4444; color: #fff; font-size: 9px;
+    font-weight: 800; display: none; align-items: center; justify-content: center;
+    padding: 0 4px; line-height: 1; font-family: 'Montserrat', sans-serif;
+}
+.notif-badge.has-new { display: flex; }
 </style>
 <script>var guideData = {};</script>
 </head>
@@ -1268,6 +1331,17 @@ body.auth-locked #authGate { display: flex; }
             </button>
         </div>
         <div class="auth-msg" id="authGateMsg"></div>
+    </div>
+</div>
+
+<!-- ── Changes / Activity Modal ─────────────────────────────── -->
+<div id="changesModal">
+    <div class="changes-card">
+        <div class="changes-head">
+            <h3>🔔 Recent Changes</h3>
+            <button class="changes-close" onclick="closeChangesModal()">&times;</button>
+        </div>
+        <div class="changes-body" id="changesBody"></div>
     </div>
 </div>
 
@@ -1314,6 +1388,9 @@ body.auth-locked #authGate { display: flex; }
             <button class="account-signout" title="Sign out" onclick="signOutUser()">⎋</button>
         </div>
         <div style="padding: 6px 16px 4px 16px; display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
+            <button class="notif-btn" id="notifBtn" onclick="openChangesModal()" title="Recent changes">
+                🔔<span class="notif-badge" id="notifBadge">0</span>
+            </button>
             <span id="editorBadge" class="editor-badge" style="display:none;">✓ Editor</span>
             <span id="vpBadge" class="vp-badge" style="display:none;">👁 VP Reviewer</span>
             <span class="sync-indicator" id="syncIndicator">
@@ -1598,6 +1675,7 @@ function onAuthorized() {
         _dataStarted = true;
         try { initPresence(); } catch(e) {}
         try { loadComments(); } catch(e) {}
+        try { loadChangeLog(); } catch(e) {}
     }
     ensureBootstrapRecord();
     renderCommentsForCurrentTab();
@@ -2339,6 +2417,137 @@ function saveEdits() {
     }
 }
 
+/* ── Change Log (tracks who changed what for notifications) ─── */
+var _changeLog = [];
+var _changeLogLoaded = false;
+var _lastSeenChangeTs = 0;
+try { _lastSeenChangeTs = parseInt(localStorage.getItem('awayDaysLastSeenChange') || '0') || 0; } catch(e) {}
+
+function logChange(action, countryKey, dateStr, details) {
+    if (!fbReady) return;
+    var entry = {
+        action: action,
+        country: countryKey,
+        date: dateStr || null,
+        details: details || '',
+        user: (currentUser && (currentUser.displayName || currentUser.email)) || 'Unknown',
+        userEmail: (currentUser && currentUser.email) || '',
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    };
+    fbDb.ref('awayDaysChangeLog').push(entry).catch(function(e) { console.warn('Change log write failed:', e); });
+}
+
+function loadChangeLog() {
+    if (!fbReady) return;
+    var cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    fbDb.ref('awayDaysChangeLog').orderByChild('timestamp').startAt(cutoff).on('value', function(snap) {
+        var val = snap.val() || {};
+        _changeLog = [];
+        Object.keys(val).forEach(function(k) {
+            var c = val[k];
+            if (c && typeof c === 'object') {
+                c._id = k;
+                _changeLog.push(c);
+            }
+        });
+        _changeLog.sort(function(a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+        _changeLogLoaded = true;
+        updateNotifBadge();
+        applyChangeDots();
+    });
+}
+
+function getNewChangeCount() {
+    var myEmail = (currentUser && currentUser.email) || '';
+    return _changeLog.filter(function(c) {
+        return c.timestamp > _lastSeenChangeTs && c.userEmail !== myEmail;
+    }).length;
+}
+
+function updateNotifBadge() {
+    var badge = document.getElementById('notifBadge');
+    if (!badge) return;
+    var count = getNewChangeCount();
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.className = count > 0 ? 'notif-badge has-new' : 'notif-badge';
+}
+
+function applyChangeDots() {
+    document.querySelectorAll('td.cal-changed').forEach(function(el) { el.classList.remove('cal-changed'); });
+    var myEmail = (currentUser && currentUser.email) || '';
+    var changedDates = {};
+    _changeLog.forEach(function(c) {
+        if (c.userEmail === myEmail) return;
+        if (c.timestamp <= _lastSeenChangeTs) return;
+        if (c.date && c.country) {
+            if (!changedDates[c.country]) changedDates[c.country] = {};
+            changedDates[c.country][c.date] = true;
+        }
+        if (c.action === 'move' && c.details) {
+            var parts = c.details.split(' → ');
+            if (parts.length === 2 && c.country) {
+                if (!changedDates[c.country]) changedDates[c.country] = {};
+                changedDates[c.country][parts[1]] = true;
+            }
+        }
+    });
+    Object.keys(changedDates).forEach(function(ck) {
+        var ph = document.querySelector('.cal-grid-placeholder[data-country="' + ck + '"]');
+        if (!ph) return;
+        Object.keys(changedDates[ck]).forEach(function(ds) {
+            var cell = ph.querySelector('[data-date="' + ds + '"]');
+            if (cell) cell.classList.add('cal-changed');
+        });
+    });
+}
+
+function openChangesModal() {
+    _lastSeenChangeTs = Date.now();
+    try { localStorage.setItem('awayDaysLastSeenChange', String(_lastSeenChangeTs)); } catch(e) {}
+    updateNotifBadge();
+    renderChangesBody();
+    document.getElementById('changesModal').classList.add('open');
+    setTimeout(function() { applyChangeDots(); }, 100);
+}
+
+function closeChangesModal() {
+    document.getElementById('changesModal').classList.remove('open');
+}
+
+function renderChangesBody() {
+    var body = document.getElementById('changesBody');
+    if (!body) return;
+    if (_changeLog.length === 0) {
+        body.innerHTML = '<div class="changes-empty">No changes in the last 7 days.</div>';
+        return;
+    }
+    var myEmail = (currentUser && currentUser.email) || '';
+    var html = '';
+    _changeLog.forEach(function(c) {
+        var isNew = c.timestamp > _lastSeenChangeTs && c.userEmail !== myEmail;
+        var initial = (c.user || '?').charAt(0).toUpperCase();
+        var cfg = countryConfigs[c.country] || {};
+        var flag = cfg.emoji || '🌍';
+        var countryLabel = cfg.label || c.country || '';
+        var what = '';
+        if (c.action === 'move') what = flag + ' Moved a date in <strong>' + esc(countryLabel) + '</strong>: ' + esc(c.details || '');
+        else if (c.action === 'add') what = flag + ' Added a date in <strong>' + esc(countryLabel) + '</strong>: ' + esc(c.date || '');
+        else if (c.action === 'remove') what = flag + ' Removed a date from <strong>' + esc(countryLabel) + '</strong>: ' + esc(c.date || '');
+        else if (c.action === 'reset') what = flag + ' Reset all changes for <strong>' + esc(countryLabel) + '</strong>';
+        else what = flag + ' ' + esc(c.action || 'Updated') + ' <strong>' + esc(countryLabel) + '</strong>';
+        var when = c.timestamp ? fmtCommentTime(c.timestamp) : '';
+        var isSelf = c.userEmail === myEmail;
+        html += '<div class="change-item' + (isNew ? ' change-new' : '') + '">'
+            + '<div class="change-avatar" style="background:' + (isSelf ? '#10B981' : '#3B82F6') + ';">' + esc(initial) + '</div>'
+            + '<div class="change-info">'
+            + '<div class="change-who">' + esc(c.user || 'Unknown') + (isSelf ? ' <span style="color:#94A3B8;font-weight:400;">(you)</span>' : '') + '</div>'
+            + '<div class="change-what">' + what + '</div>'
+            + '<div class="change-when">' + when + '</div>'
+            + '</div></div>';
+    });
+    body.innerHTML = html;
+}
+
 function saveState() {
     var st = { tab: currentTab, year: currentYear };
     try { localStorage.setItem('awayDaysState', JSON.stringify(st)); } catch(e) {}
@@ -2968,6 +3177,7 @@ function addDayToCalendar(countryKey, dateStr, year) {
             delete removedSet[dateStr];
             edits[ek].changes['add:' + dateStr] = true;
             saveEdits();
+            logChange('add', countryKey, dateStr, dateStr);
             refreshCalendars(countryKey, year);
         }
         return;
@@ -2977,6 +3187,7 @@ function addDayToCalendar(countryKey, dateStr, year) {
     hols.push({ date: dateStr, name: 'Away Day (added)', type: 'Suggested', day: dayNames[d.getDay()], reason: 'Manually added' });
     edits[ek].changes['add:' + dateStr] = true;
     saveEdits();
+    logChange('add', countryKey, dateStr, dateStr);
     refreshCalendars(countryKey, year);
 }
 
@@ -3004,6 +3215,7 @@ function removeDayFromCalendar(countryKey, dateStr, year) {
     }
     edits[ek].changes['remove:' + dateStr] = true;
     saveEdits();
+    logChange('remove', countryKey, dateStr, entry.name || dateStr);
     refreshCalendars(countryKey, year);
 }
 
@@ -3050,6 +3262,7 @@ function applyEdit(countryKey, year, fromDate, toDate, holiday) {
     hols[idx].day = dayNames[tgtDate.getDay()];
     edits[ek].changes[fromDate + '->' + toDate] = true;
     saveEdits();
+    logChange('move', countryKey, fromDate, fromDate + ' → ' + toDate);
 
     refreshCalendars(countryKey, year);
     setTimeout(function() {
@@ -3071,6 +3284,7 @@ function resetEdits(countryKey, year) {
     const ek = getEditKey(countryKey, year);
     delete edits[ek];
     saveEdits();
+    logChange('reset', countryKey, null, 'All changes reset');
     var ph = document.querySelector('.cal-grid-placeholder[data-country="' + countryKey + '"]');
     if (ph) renderCalendarGrid(ph, year, getActiveHolidays(countryKey, year), countryKey);
     var sel = document.getElementById('suggestCountry');
@@ -3751,6 +3965,7 @@ function refreshAllViews() {
         renderCountryTabs();
         renderExecSummary();
         showTab(currentTab);
+        if (_changeLogLoaded) setTimeout(applyChangeDots, 50);
     } catch(err) {
         console.error('refreshAllViews error:', err);
         var errDiv = document.createElement('div');
