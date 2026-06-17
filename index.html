@@ -12,7 +12,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -1505,30 +1504,78 @@ try {
     }
 } catch(e) { console.warn('Firebase init failed, falling back to localStorage:', e); }
 
-/* ── EmailJS (automatic invite emails) ───────────────────────── */
-var EMAILJS_CONFIG = {"publicKey": "", "serviceId": "", "templateId": ""};
-var emailjsReady = false;
-try {
-    if (EMAILJS_CONFIG && EMAILJS_CONFIG.publicKey && typeof emailjs !== 'undefined') {
-        emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
-        emailjsReady = !!(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templateId);
-    }
-} catch(e) { console.warn('EmailJS init failed:', e); }
+/* ── Gmail API invite emails (Google Suite–style) ────────────── */
+var _gmailAccessToken = null;
 
 function sendInviteEmail(toEmail, role, cb) {
-    if (!emailjsReady) { if (cb) cb(false, 'not-configured'); return; }
-    var params = {
-        to_email: toEmail,
-        email: toEmail,
-        role: role,
-        role_label: role.charAt(0).toUpperCase() + role.slice(1),
-        invited_by: (currentUser && (currentUser.displayName || currentUser.email)) || 'An admin',
-        dashboard_link: 'https://laubarrera1.github.io/away-days-dashboard/',
-        message: 'You have been given ' + role + ' access to the Away Days dashboard.'
-    };
-    emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, params)
-        .then(function() { if (cb) cb(true); })
-        .catch(function(err) { console.error('Invite email failed:', err); if (cb) cb(false, (err && err.text) || 'send-failed'); });
+    if (!_gmailAccessToken) {
+        console.warn('No Gmail token — re-authenticating to get send permission.');
+        reAuthForGmail(function(ok) {
+            if (ok) sendInviteEmail(toEmail, role, cb);
+            else if (cb) cb(false, 'no-token');
+        });
+        return;
+    }
+    var senderName = (currentUser && currentUser.displayName) || 'Away Days Admin';
+    var senderEmail = (currentUser && currentUser.email) || '';
+    var roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+    var link = 'https://laubarrera1.github.io/away-days-dashboard/';
+
+    var body = 'Hi,\n\n'
+        + senderName + ' has given you ' + roleLabel + ' access to the Away Days dashboard.\n\n'
+        + 'Open it here and sign in with your Google account:\n' + link + '\n\n'
+        + 'Role permissions:\n'
+        + '  • Viewer — view calendars\n'
+        + '  • Commenter — view + comment\n'
+        + '  • Editor — view, comment, edit dates\n'
+        + '  • Admin — everything + manage people\n\n'
+        + 'You have: ' + roleLabel + '\n';
+
+    var mime = 'From: ' + senderName + ' <' + senderEmail + '>\r\n'
+        + 'To: ' + toEmail + '\r\n'
+        + 'Subject: You\'ve been invited to the Away Days dashboard\r\n'
+        + 'Content-Type: text/plain; charset=UTF-8\r\n\r\n'
+        + body;
+
+    var encoded = btoa(unescape(encodeURIComponent(mime))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Bearer ' + _gmailAccessToken,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ raw: encoded })
+    })
+    .then(function(r) {
+        if (r.ok) { if (cb) cb(true); }
+        else if (r.status === 401 || r.status === 403) {
+            _gmailAccessToken = null;
+            reAuthForGmail(function(ok) {
+                if (ok) sendInviteEmail(toEmail, role, cb);
+                else if (cb) cb(false, 'reauth-failed');
+            });
+        }
+        else { r.text().then(function(t) { console.error('Gmail send error:', t); if (cb) cb(false, 'send-failed'); }); }
+    })
+    .catch(function(err) { console.error('Gmail API error:', err); if (cb) cb(false, 'network-error'); });
+}
+
+function reAuthForGmail(cb) {
+    if (!fbAuth) { if (cb) cb(false); return; }
+    var provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/gmail.send');
+    provider.setCustomParameters({ prompt: 'consent' });
+    fbAuth.currentUser.reauthenticateWithPopup(provider).then(function(result) {
+        var cred = result.credential;
+        if (cred && cred.accessToken) {
+            _gmailAccessToken = cred.accessToken;
+            if (cb) cb(true);
+        } else { if (cb) cb(false); }
+    }).catch(function(err) {
+        console.error('Re-auth failed:', err);
+        if (cb) cb(false);
+    });
 }
 
 /* ── Google Auth + Role-Based Access Control ─────────────────── */
@@ -1554,8 +1601,12 @@ function isAdmin() { return currentUserRole === 'admin'; }
 function signInWithGoogle() {
     if (!fbAuth) { document.getElementById('authGateMsg').textContent = 'Authentication is unavailable.'; return; }
     var provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/gmail.send');
     provider.setCustomParameters({ prompt: 'select_account' });
-    fbAuth.signInWithPopup(provider).catch(function(err) {
+    fbAuth.signInWithPopup(provider).then(function(result) {
+        var cred = result.credential;
+        if (cred && cred.accessToken) _gmailAccessToken = cred.accessToken;
+    }).catch(function(err) {
         document.getElementById('authGateMsg').textContent = err.message || 'Sign-in failed.';
     });
 }
@@ -1732,11 +1783,11 @@ function adminAddPerson() {
         sendInviteEmail(email, role, function(ok, reason) {
             if (addBtn) { addBtn.disabled = false; addBtn.textContent = 'Add'; }
             if (ok) {
-                showAdminNotice('✓ ' + email + ' added and invite email sent.', 'ok');
-            } else if (reason === 'not-configured') {
-                showAdminNotice('✓ ' + email + ' added. (Email invites are not set up yet — share the link manually.)', 'warn');
+                showAdminNotice('✓ ' + email + ' added and invite email sent from your Gmail.', 'ok');
+            } else if (reason === 'no-token' || reason === 'reauth-failed') {
+                showAdminNotice('✓ ' + email + ' added. Gmail permission needed to send invites — a popup will appear next time.', 'warn');
             } else {
-                showAdminNotice('✓ ' + email + ' added, but the invite email failed to send. Share the link manually.', 'warn');
+                showAdminNotice('✓ ' + email + ' added, but the invite email failed. Share the link manually.', 'warn');
             }
         });
     }).catch(function(err) {
