@@ -80,6 +80,15 @@ body {
 .sidebar-item .si-label {
     flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sidebar-item .si-count {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+    background: rgba(255,255,255,0.08); color: #94A3B8; white-space: nowrap;
+    margin-left: auto; flex-shrink: 0;
+}
+.sidebar-item.active .si-count {
+    background: rgba(59,130,246,0.25); color: #93C5FD;
+}
+.si-count-full { color: #4ADE80 !important; background: rgba(74,222,128,0.12) !important; }
 /* Sidebar country card */
 .sidebar-countries-card {
     margin: 4px 10px 8px 10px; background: rgba(255,255,255,0.04);
@@ -1432,7 +1441,7 @@ td.cal-changed::before {
                     </span>
                 </div>
                 <div class="sidebar-countries-body">
-                    <div class="scb-region">Americas</div><button class="sidebar-item" data-tab="US" onclick="showTab(&#39;US&#39;)"><span class="si-icon">🇺🇸</span><span class="si-label">US</span></button><button class="sidebar-item" data-tab="Canada" onclick="showTab(&#39;Canada&#39;)"><span class="si-icon">🇨🇦</span><span class="si-label">Canada</span></button><div class="scb-region">EMEA</div><button class="sidebar-item" data-tab="UK" onclick="showTab(&#39;UK&#39;)"><span class="si-icon">🇬🇧</span><span class="si-label">UK</span></button><button class="sidebar-item" data-tab="Poland" onclick="showTab(&#39;Poland&#39;)"><span class="si-icon">🇵🇱</span><span class="si-label">Poland</span></button><button class="sidebar-item" data-tab="Spain" onclick="showTab(&#39;Spain&#39;)"><span class="si-icon">🇪🇸</span><span class="si-label">Spain (Madrid)</span></button><button class="sidebar-item" data-tab="Netherlands" onclick="showTab(&#39;Netherlands&#39;)"><span class="si-icon">🇳🇱</span><span class="si-label">Netherlands</span></button><div class="scb-region">APAC</div><button class="sidebar-item" data-tab="Australia" onclick="showTab(&#39;Australia&#39;)"><span class="si-icon">🇦🇺</span><span class="si-label">Australia</span></button>
+                    <div class="scb-region">Americas</div><button class="sidebar-item" data-tab="US" onclick="showTab(&#39;US&#39;)"><span class="si-icon">🇺🇸</span><span class="si-label">US</span><span class="si-count" id="siCount_US"></span></button><button class="sidebar-item" data-tab="Canada" onclick="showTab(&#39;Canada&#39;)"><span class="si-icon">🇨🇦</span><span class="si-label">Canada</span><span class="si-count" id="siCount_Canada"></span></button><div class="scb-region">EMEA</div><button class="sidebar-item" data-tab="UK" onclick="showTab(&#39;UK&#39;)"><span class="si-icon">🇬🇧</span><span class="si-label">UK</span><span class="si-count" id="siCount_UK"></span></button><button class="sidebar-item" data-tab="Poland" onclick="showTab(&#39;Poland&#39;)"><span class="si-icon">🇵🇱</span><span class="si-label">Poland</span><span class="si-count" id="siCount_Poland"></span></button><button class="sidebar-item" data-tab="Spain" onclick="showTab(&#39;Spain&#39;)"><span class="si-icon">🇪🇸</span><span class="si-label">Spain (Madrid)</span><span class="si-count" id="siCount_Spain"></span></button><button class="sidebar-item" data-tab="Netherlands" onclick="showTab(&#39;Netherlands&#39;)"><span class="si-icon">🇳🇱</span><span class="si-label">Netherlands</span><span class="si-count" id="siCount_Netherlands"></span></button><div class="scb-region">APAC</div><button class="sidebar-item" data-tab="Australia" onclick="showTab(&#39;Australia&#39;)"><span class="si-icon">🇦🇺</span><span class="si-label">Australia</span><span class="si-count" id="siCount_Australia"></span></button>
                 </div>
             </div>
 
@@ -3323,6 +3332,22 @@ function refreshStatPanel(countryKey, year) {
     panel.innerHTML = html;
 }
 
+function updateSidebarCounts() {
+    var countries = Object.keys(countryConfigs);
+    countries.forEach(function(ck) {
+        var el = document.getElementById('siCount_' + ck);
+        if (!el) return;
+        var cfg = countryConfigs[ck] || {};
+        var target = cfg.target || 0;
+        var hols = getActiveHolidays(ck, currentYear);
+        var count = hols.filter(function(h) {
+            return h.type === 'Core' || h.type === 'Non-Core' || h.type === 'Suggested' || h.type === 'Quebec';
+        }).length;
+        el.textContent = count + '/' + target;
+        el.classList.toggle('si-count-full', count >= target);
+    });
+}
+
 function refreshCalendars(countryKey, year) {
     var hols = getActiveHolidays(countryKey, year);
     var ph = document.querySelector('.cal-grid-placeholder[data-country="' + countryKey + '"]');
@@ -3330,6 +3355,7 @@ function refreshCalendars(countryKey, year) {
     var sel = document.getElementById('suggestCountry');
     if (sel && sel.value === countryKey) renderSuggestedCalendar(countryKey);
     refreshStatPanel(countryKey, year);
+    updateSidebarCounts();
     renderTiles();
     renderExecSummary();
 }
@@ -4057,6 +4083,7 @@ function refreshAllViews() {
         renderTiles();
         renderCountryTabs();
         renderExecSummary();
+        updateSidebarCounts();
         showTab(currentTab);
         if (_changeLogLoaded) setTimeout(applyChangeDots, 50);
     } catch(err) {
@@ -5018,6 +5045,10 @@ function downloadExcel() {
 
 /* ── Download Guide (Away Days Guide PDF) ─────────────────────── */
 function downloadGuide() {
+    if (!guideData || Object.keys(guideData).length === 0) {
+        alert("The Away Days Guide PDF is too large for the hosted version.\n\nTo download it, run generate_html.py locally and use the local dashboard.");
+        return;
+    }
     var yr = 2026 + 1;
     var key = 'guide_' + yr;
     if (typeof guideData !== 'undefined' && guideData[key]) {
