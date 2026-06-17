@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -1130,10 +1131,163 @@ body {
 
 /* Always show comment rail */
 .country-comments-rail { display: block; }
+
+/* ── Auth Gate (Google sign-in) ──────────────────────────────── */
+body.auth-locked .app-layout { display: none !important; }
+#authGate {
+    position: fixed; inset: 0; z-index: 100000; display: none;
+    align-items: center; justify-content: center;
+    background: radial-gradient(circle at 30% 20%, #1E293B 0%, #0F172A 60%, #020617 100%);
+    font-family: 'Montserrat', sans-serif;
+}
+body.auth-locked #authGate { display: flex; }
+.auth-card {
+    background: #fff; border-radius: 18px; padding: 40px 44px; width: 380px; max-width: 90vw;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.45); text-align: center;
+}
+.auth-card h2 { font-size: 22px; color: #0F172A; margin-bottom: 6px; letter-spacing: -0.5px; }
+.auth-card p { font-size: 13px; color: #64748B; margin-bottom: 26px; line-height: 1.5; }
+.auth-logo { font-size: 34px; margin-bottom: 14px; }
+.google-btn {
+    display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+    background: #fff; border: 1px solid #DADCE0; border-radius: 8px;
+    padding: 11px 20px; font-size: 14px; font-weight: 600; color: #3C4043;
+    font-family: 'Montserrat', sans-serif; transition: box-shadow 0.15s, background 0.15s;
+}
+.google-btn:hover { box-shadow: 0 1px 6px rgba(0,0,0,0.18); background: #F8FAFC; }
+.google-btn svg { width: 18px; height: 18px; }
+.auth-msg { margin-top: 18px; font-size: 12px; color: #DC2626; min-height: 16px; line-height: 1.4; }
+.auth-denied-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
+.auth-secondary-btn {
+    background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; font-family: 'Montserrat', sans-serif;
+}
+.auth-secondary-btn:hover { background: #E2E8F0; }
+.auth-user-line { font-size: 13px; color: #334155; margin-bottom: 4px; }
+.auth-user-line strong { color: #0F172A; }
+
+/* Account chip in sidebar */
+.account-chip {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 4px 16px 0 16px;
+    background: #0B1220; border: 1px solid #1E293B; border-radius: 10px;
+}
+.account-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: #3B82F6;
+    background-size: cover; background-position: center;
+}
+.account-meta { flex: 1; min-width: 0; }
+.account-name { font-size: 12px; font-weight: 700; color: #E2E8F0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-role { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.account-role.admin { color: #C4B5FD; }
+.account-role.editor { color: #6EE7B7; }
+.account-role.commenter { color: #93C5FD; }
+.account-role.viewer { color: #94A3B8; }
+.account-signout {
+    background: none; border: none; color: #64748B; cursor: pointer; font-size: 14px; padding: 2px 4px;
+}
+.account-signout:hover { color: #F87171; }
+
+/* ── Admin / People panel ────────────────────────────────────── */
+#adminModal {
+    position: fixed; inset: 0; z-index: 99000; display: none;
+    align-items: center; justify-content: center; background: rgba(15,23,42,0.55);
+    font-family: 'Montserrat', sans-serif;
+}
+#adminModal.open { display: flex; }
+.admin-card {
+    background: #fff; border-radius: 16px; width: 620px; max-width: 94vw; max-height: 86vh;
+    overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 24px 70px rgba(0,0,0,0.4);
+}
+.admin-head {
+    padding: 18px 22px; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between;
+}
+.admin-head h3 { font-size: 17px; color: #0F172A; }
+.admin-head .admin-close { background: none; border: none; font-size: 20px; color: #94A3B8; cursor: pointer; }
+.admin-add-row { display: flex; gap: 8px; padding: 16px 22px; border-bottom: 1px solid #F1F5F9; flex-wrap: wrap; }
+.admin-add-row input {
+    flex: 1; min-width: 180px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;
+    font-size: 13px; font-family: 'Montserrat', sans-serif; outline: none;
+}
+.admin-add-row input:focus { border-color: #3B82F6; }
+.admin-add-row select {
+    border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 10px; font-size: 13px;
+    font-family: 'Montserrat', sans-serif; color: #334155;
+}
+.admin-add-btn {
+    background: #3B82F6; color: #fff; border: none; border-radius: 8px; padding: 9px 18px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Montserrat', sans-serif;
+}
+.admin-add-btn:hover { background: #2563EB; }
+.admin-list { overflow-y: auto; padding: 8px 22px 18px 22px; }
+.admin-person {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F1F5F9;
+}
+.admin-person-info { flex: 1; min-width: 0; }
+.admin-person-name { font-size: 13px; font-weight: 700; color: #1E293B; }
+.admin-person-email { font-size: 11px; color: #94A3B8; }
+.admin-person select {
+    border: 1px solid #E2E8F0; border-radius: 7px; padding: 6px 8px; font-size: 12px;
+    font-family: 'Montserrat', sans-serif; color: #334155;
+}
+.admin-remove-btn {
+    background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; border-radius: 7px;
+    padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Montserrat', sans-serif;
+}
+.admin-remove-btn:hover { background: #FEE2E2; }
+.admin-empty { padding: 24px; text-align: center; color: #94A3B8; font-size: 13px; }
+.role-pill { font-size: 9px; padding: 2px 7px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.role-pill.admin { background: #EDE9FE; color: #7C3AED; }
+.role-pill.editor { background: #D1FAE5; color: #059669; }
+.role-pill.commenter { background: #DBEAFE; color: #2563EB; }
+.role-pill.viewer { background: #F1F5F9; color: #64748B; }
+
+.gdoc-avatar.admin { background: #7C3AED; }
+.gdoc-avatar.commenter { background: #2563EB; }
+.gdoc-role-badge.admin { background: #EDE9FE; color: #7C3AED; }
+.gdoc-role-badge.commenter { background: #DBEAFE; color: #2563EB; }
 </style>
 <script>var guideData = {};</script>
 </head>
-<body>
+<body class="auth-locked">
+
+<!-- ── Google Sign-in Gate ─────────────────────────────────────── -->
+<div id="authGate">
+    <div class="auth-card">
+        <div class="auth-logo">📅</div>
+        <h2 id="authGateTitle">Away Days</h2>
+        <p id="authGateSub">Sign in to access the holiday dashboard.</p>
+        <div id="authGateBody">
+            <button class="google-btn" onclick="signInWithGoogle()">
+                <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Sign in with Google
+            </button>
+        </div>
+        <div class="auth-msg" id="authGateMsg"></div>
+    </div>
+</div>
+
+<!-- ── Admin / People Modal ────────────────────────────────────── -->
+<div id="adminModal">
+    <div class="admin-card">
+        <div class="admin-head">
+            <h3>👥 People &amp; Permissions</h3>
+            <button class="admin-close" onclick="closeAdminModal()">&times;</button>
+        </div>
+        <div class="admin-add-row">
+            <input type="email" id="adminAddEmail" placeholder="person@company.com" />
+            <select id="adminAddRole">
+                <option value="viewer">Viewer</option>
+                <option value="commenter" selected>Commenter</option>
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button class="admin-add-btn" onclick="adminAddPerson()">Add</button>
+        </div>
+        <div class="admin-list" id="adminList"></div>
+    </div>
+</div>
 
 <div class="app-layout">
     <aside class="sidebar">
@@ -1147,10 +1301,17 @@ body {
                 <option value="2026" selected>2026 — Current</option><option value="2027">2027 — Next</option><option value="2028">2028</option><option value="2029">2029</option>
             </select>
         </div>
-        <div style="padding: 8px 20px; display: flex; align-items: center; gap: 8px; justify-content: space-between;">
-            <button class="editor-login-btn" onclick="checkEditorAuth()">🔑 Editor Login</button>
-            <span id="editorBadge" class="editor-badge">✓ Editor</span>
-            <span id="vpBadge" class="vp-badge">👁 VP Reviewer</span>
+        <div id="accountChip" class="account-chip" style="display:none;">
+            <div id="accountAvatar" class="account-avatar"></div>
+            <div class="account-meta">
+                <div id="accountName" class="account-name">—</div>
+                <div id="accountRole" class="account-role viewer">viewer</div>
+            </div>
+            <button class="account-signout" title="Sign out" onclick="signOutUser()">⎋</button>
+        </div>
+        <div style="padding: 6px 16px 4px 16px; display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
+            <span id="editorBadge" class="editor-badge" style="display:none;">✓ Editor</span>
+            <span id="vpBadge" class="vp-badge" style="display:none;">👁 VP Reviewer</span>
             <span class="sync-indicator" id="syncIndicator">
                 <span class="sync-dot" id="syncDot"></span> <span id="syncLabel">Local</span>
             </span>
@@ -1202,6 +1363,11 @@ body {
             </button>
             <button class="sidebar-item" onclick="window.open('https://docs.google.com/presentation/d/1uzHBndFGiQVOT2XMLzeB3332dBpVWOM0PvCMeMF8UkU/edit', '_blank')" style="cursor:pointer;">
                 <span class="si-icon">📊</span><span class="si-label">Google Slides — Guide</span>
+            </button>
+
+            <div class="sidebar-section" id="adminNavSection" style="display:none;">Admin</div>
+            <button class="sidebar-item" id="adminNavItem" onclick="openAdminModal()" style="cursor:pointer; display:none;">
+                <span class="si-icon">👥</span><span class="si-label">People &amp; Permissions</span>
             </button>
         </nav>
     </aside>
@@ -1334,33 +1500,234 @@ try {
     }
 } catch(e) { console.warn('Firebase init failed, falling back to localStorage:', e); }
 
-/* ── Editor Password Gate ────────────────────────────────────── */
-var EDITOR_PASSWORD = 'awaydays2027';
-var isEditor = false;
-try { if (localStorage.getItem('awayDaysEditor') === 'true') { isEditor = true; } } catch(e) {}
-if (isEditor) {
-    document.body.classList.add('editor-mode');
-    setTimeout(function() {
-        var badge = document.getElementById('editorBadge');
-        if (badge) badge.style.display = 'inline-flex';
-    }, 100);
+/* ── Google Auth + Role-Based Access Control ─────────────────── */
+var fbAuth = null;
+try { if (fbReady) fbAuth = firebase.auth(); } catch(e) { console.warn('Auth init failed:', e); }
+
+// Admins that always have access even if the access list is empty (bootstrap).
+var BOOTSTRAP_ADMINS = ['laura.barrera@affirm.com'];
+var ROLE_RANK = { viewer: 1, commenter: 2, editor: 3, admin: 4 };
+
+var currentUser = null;        // firebase auth user
+var currentUserRole = null;    // 'viewer' | 'commenter' | 'editor' | 'admin'
+var accessList = {};          // emailKey -> { email, name, role }
+var isEditor = false;          // derived: editor or admin
+var _dataStarted = false;
+
+function emailKey(email) { return (email || '').toLowerCase().replace(/[.#$\[\]]/g, ','); }
+function roleRank(r) { return ROLE_RANK[r] || 0; }
+function canEdit() { return roleRank(currentUserRole) >= ROLE_RANK.editor; }
+function userCanComment() { return roleRank(currentUserRole) >= ROLE_RANK.commenter; }
+function isAdmin() { return currentUserRole === 'admin'; }
+
+function signInWithGoogle() {
+    if (!fbAuth) { document.getElementById('authGateMsg').textContent = 'Authentication is unavailable.'; return; }
+    var provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    fbAuth.signInWithPopup(provider).catch(function(err) {
+        document.getElementById('authGateMsg').textContent = err.message || 'Sign-in failed.';
+    });
 }
-function checkEditorAuth() {
-    if (isEditor) return true;
-    var pwd = prompt('Enter the editor password to make changes:');
-    if (pwd === EDITOR_PASSWORD) {
-        isEditor = true;
-        document.body.classList.add('editor-mode');
-        var badge = document.getElementById('editorBadge');
-        if (badge) badge.style.display = 'inline-flex';
-        try { localStorage.setItem('awayDaysEditor', 'true'); } catch(e) {}
-        return true;
+function signOutUser() { if (fbAuth) fbAuth.signOut().then(function() { location.reload(); }); }
+
+function showAuthDenied(email) {
+    document.getElementById('authGateTitle').textContent = 'No access yet';
+    document.getElementById('authGateSub').textContent = 'Your account is not on the access list. Ask an admin to invite you.';
+    document.getElementById('authGateBody').innerHTML =
+        '<div class="auth-user-line">Signed in as <strong>' + esc(email) + '</strong></div>'
+        + '<div class="auth-denied-actions">'
+        + '<button class="auth-secondary-btn" onclick="signOutUser()">Use a different account</button>'
+        + '</div>';
+    document.getElementById('authGateMsg').textContent = '';
+    document.body.classList.add('auth-locked');
+}
+
+function lookupRole(email) {
+    var e = (email || '').toLowerCase();
+    if (BOOTSTRAP_ADMINS.indexOf(e) !== -1) return 'admin';
+    var rec = accessList[emailKey(e)];
+    return rec && rec.role ? rec.role : null;
+}
+
+function onAuthorized() {
+    document.body.classList.remove('auth-locked');
+    var gate = document.getElementById('authGate');
+    if (gate) gate.style.display = 'none';
+
+    isEditor = canEdit();
+    document.body.classList.toggle('editor-mode', canEdit());
+    // vp-mode disables the inline editing UI for non-editors (viewer/commenter)
+    document.body.classList.toggle('vp-mode', !canEdit());
+
+    // Use the Google profile for comment authorship + presence
+    _commenterName = (currentUser && (currentUser.displayName || currentUser.email)) || _commenterName;
+
+    updateAccountChip();
+    var adminItem = document.getElementById('adminNavItem');
+    if (adminItem) adminItem.style.display = isAdmin() ? 'flex' : 'none';
+    var adminSec = document.getElementById('adminNavSection');
+    if (adminSec) adminSec.style.display = isAdmin() ? 'block' : 'none';
+
+    if (!_dataStarted && fbReady) {
+        _dataStarted = true;
+        try { initPresence(); } catch(e) {}
+        try { loadComments(); } catch(e) {}
     }
-    alert('Incorrect password. You can still view the dashboard, but edits are disabled.');
+    renderCommentsForCurrentTab();
+}
+
+function updateAccountChip() {
+    var chip = document.getElementById('accountChip');
+    if (!chip) return;
+    if (!currentUser) { chip.style.display = 'none'; return; }
+    chip.style.display = 'flex';
+    var name = currentUser.displayName || currentUser.email || 'User';
+    var av = document.getElementById('accountAvatar');
+    if (av) {
+        if (currentUser.photoURL) {
+            av.style.backgroundImage = 'url(' + currentUser.photoURL + ')';
+            av.textContent = '';
+        } else {
+            av.textContent = name.charAt(0).toUpperCase();
+        }
+    }
+    var nm = document.getElementById('accountName');
+    if (nm) nm.textContent = name;
+    var rl = document.getElementById('accountRole');
+    if (rl) { rl.textContent = currentUserRole || 'viewer'; rl.className = 'account-role ' + (currentUserRole || 'viewer'); }
+}
+
+function startAuthFlow() {
+    // Local file / no Firebase: unlock fully as admin so the local dashboard still works.
+    if (!fbAuth || location.protocol === 'file:') {
+        currentUser = { displayName: 'Local User', email: 'local', photoURL: null };
+        currentUserRole = 'admin';
+        var ac = document.getElementById('accountChip');
+        if (ac) ac.style.display = 'none';
+        onAuthorized();
+        return;
+    }
+    // Watch the access list so role changes apply live.
+    fbDb.ref('awayDaysAccess').on('value', function(snap) {
+        accessList = snap.val() || {};
+        if (currentUser) {
+            var newRole = lookupRole(currentUser.email);
+            if (newRole !== currentUserRole) {
+                currentUserRole = newRole;
+                if (newRole) onAuthorized(); else showAuthDenied(currentUser.email);
+            } else if (isAdmin()) {
+                renderAdminList();
+            }
+        }
+    });
+    fbAuth.onAuthStateChanged(function(user) {
+        currentUser = user;
+        if (!user) {
+            currentUserRole = null;
+            document.body.classList.add('auth-locked');
+            var gate = document.getElementById('authGate');
+            if (gate) gate.style.display = 'flex';
+            return;
+        }
+        currentUserRole = lookupRole(user.email);
+        if (currentUserRole) onAuthorized(); else showAuthDenied(user.email);
+    });
+}
+
+// Legacy hooks kept so existing edit handlers keep working.
+function requireEditor() {
+    if (canEdit()) return true;
+    alert('You have ' + (currentUserRole || 'view') + ' access. Editing dates requires Editor or Admin permission. Ask an admin to upgrade your access.');
     return false;
 }
-function requireEditor() {
-    return isEditor || checkEditorAuth();
+function checkEditorAuth() { return canEdit(); }
+
+/* ── Admin: People & Permissions management ──────────────────── */
+var ROLE_OPTIONS = ['viewer', 'commenter', 'editor', 'admin'];
+var ROLE_LABELS = { viewer: 'Viewer', commenter: 'Commenter', editor: 'Editor', admin: 'Admin' };
+
+function openAdminModal() {
+    if (!isAdmin()) { alert('Only admins can manage people.'); return; }
+    document.getElementById('adminModal').classList.add('open');
+    renderAdminList();
+}
+function closeAdminModal() {
+    document.getElementById('adminModal').classList.remove('open');
+}
+
+function adminAddPerson() {
+    if (!isAdmin() || !fbReady) return;
+    var emailEl = document.getElementById('adminAddEmail');
+    var roleEl = document.getElementById('adminAddRole');
+    var email = (emailEl.value || '').trim().toLowerCase();
+    var role = roleEl.value;
+    if (!email || email.indexOf('@') === -1) { alert('Enter a valid email address.'); return; }
+    if (ROLE_OPTIONS.indexOf(role) === -1) role = 'viewer';
+    fbDb.ref('awayDaysAccess/' + emailKey(email)).set({
+        email: email,
+        name: email.split('@')[0],
+        role: role,
+        addedBy: (currentUser && currentUser.email) || 'admin',
+        addedAt: firebase.database.ServerValue.TIMESTAMP
+    }).then(function() {
+        emailEl.value = '';
+        renderAdminList();
+    }).catch(function(err) { alert('Could not add person: ' + err.message); });
+}
+
+function adminChangeRole(key, role) {
+    if (!isAdmin() || !fbReady) return;
+    fbDb.ref('awayDaysAccess/' + key + '/role').set(role).catch(function(err) {
+        alert('Could not change role: ' + err.message);
+    });
+}
+
+function adminRemovePerson(key, email) {
+    if (!isAdmin() || !fbReady) return;
+    if ((email || '').toLowerCase() === ((currentUser && currentUser.email) || '').toLowerCase()) {
+        if (!confirm('This will remove your OWN access. Continue?')) return;
+    } else if (!confirm('Remove access for ' + email + '?')) {
+        return;
+    }
+    fbDb.ref('awayDaysAccess/' + key).remove().then(function() {
+        renderAdminList();
+    }).catch(function(err) { alert('Could not remove: ' + err.message); });
+}
+
+function renderAdminList() {
+    var list = document.getElementById('adminList');
+    if (!list) return;
+    var keys = Object.keys(accessList);
+    if (keys.length === 0) {
+        list.innerHTML = '<div class="admin-empty">No one has been invited yet. Add someone above.</div>';
+        return;
+    }
+    keys.sort(function(a, b) {
+        var ra = roleRank((accessList[b] || {}).role) - roleRank((accessList[a] || {}).role);
+        if (ra !== 0) return ra;
+        return ((accessList[a] || {}).email || '').localeCompare((accessList[b] || {}).email || '');
+    });
+    var html = '';
+    keys.forEach(function(k) {
+        var p = accessList[k] || {};
+        var email = p.email || k.replace(/,/g, '.');
+        var name = p.name || email.split('@')[0];
+        var role = p.role || 'viewer';
+        var initial = name.charAt(0).toUpperCase();
+        var opts = ROLE_OPTIONS.map(function(r) {
+            return '<option value="' + r + '"' + (r === role ? ' selected' : '') + '>' + ROLE_LABELS[r] + '</option>';
+        }).join('');
+        html += '<div class="admin-person">'
+            + '<div class="account-avatar" style="background:#3B82F6;">' + esc(initial) + '</div>'
+            + '<div class="admin-person-info">'
+            + '<div class="admin-person-name">' + esc(name) + ' <span class="role-pill ' + role + '">' + ROLE_LABELS[role] + '</span></div>'
+            + '<div class="admin-person-email">' + esc(email) + '</div>'
+            + '</div>'
+            + '<select onchange="adminChangeRole(\'' + k + '\', this.value)">' + opts + '</select>'
+            + '<button class="admin-remove-btn" onclick="adminRemovePerson(\'' + k + '\', \'' + esc(email) + '\')">Remove</button>'
+            + '</div>';
+    });
+    list.innerHTML = html;
 }
 
 /* ── Role Detection (VP, Director, Viewer) ─────────────────── */
@@ -1400,6 +1767,11 @@ function ensureCommenterName() {
 }
 
 function getRole() {
+    if (currentUserRole === 'admin') return 'Admin';
+    if (currentUserRole === 'editor') return 'Editor';
+    if (currentUserRole === 'commenter') return 'Commenter';
+    if (currentUserRole === 'viewer') return 'Viewer';
+    // legacy fallbacks
     if (isVP) return 'VP';
     if (isDirector) return 'Director';
     if (isEditor) return 'Editor';
@@ -1407,16 +1779,20 @@ function getRole() {
 }
 
 function getRoleInitial(role) {
+    if (role === 'Admin') return 'A';
     if (role === 'VP') return 'VP';
     if (role === 'Director') return 'D';
     if (role === 'Editor') return 'E';
+    if (role === 'Commenter') return 'C';
     return 'V';
 }
 
 function getRoleCls(role) {
+    if (role === 'Admin') return 'admin';
     if (role === 'VP') return 'vp';
     if (role === 'Director') return 'director';
     if (role === 'Editor') return 'editor';
+    if (role === 'Commenter') return 'commenter';
     return 'viewer';
 }
 
@@ -1584,7 +1960,7 @@ function renderCommentsRail(countryKey) {
     if (!rail) return;
 
     var comments = getCommentsForCountry(countryKey);
-    var canComment = true;
+    var canComment = userCanComment();
     var openCount = comments.filter(function(c) { return !c.resolved; }).length;
 
     var html = '<div class="comment-rail-header">'
@@ -1592,12 +1968,16 @@ function renderCommentsRail(countryKey) {
         + '<span class="comment-rail-count">' + openCount + ' open</span>'
         + '</div>';
 
-    html += '<div class="gdoc-new-comment">'
-        + '<textarea id="newCommentInput_' + countryKey + '" placeholder="Add a comment... (type @ to mention)" oninput="handleMentionInput(event)"></textarea>'
-        + '<div class="gdoc-new-comment-footer">'
-        + '<select id="newCommentDate_' + countryKey + '"><option value="">General comment</option></select>'
-        + '<button class="gdoc-new-comment-btn" onclick="submitNewComment(\'' + countryKey + '\')">Comment</button>'
-        + '</div></div>';
+    if (canComment) {
+        html += '<div class="gdoc-new-comment">'
+            + '<textarea id="newCommentInput_' + countryKey + '" placeholder="Add a comment... (type @ to mention)" oninput="handleMentionInput(event)"></textarea>'
+            + '<div class="gdoc-new-comment-footer">'
+            + '<select id="newCommentDate_' + countryKey + '"><option value="">General comment</option></select>'
+            + '<button class="gdoc-new-comment-btn" onclick="submitNewComment(\'' + countryKey + '\')">Comment</button>'
+            + '</div></div>';
+    } else {
+        html += '<div style="font-size:11px;color:#94A3B8;padding:6px 2px 10px 2px;">You have view-only access. Ask an admin for Commenter access to join the discussion.</div>';
+    }
 
     var q = String.fromCharCode(39);
     comments.forEach(function(c) {
@@ -3350,7 +3730,7 @@ function initPresence() {
     if (!fbReady) return;
     var presenceRef = fbDb.ref('awayDaysPresence');
     var connRef = fbDb.ref('.info/connected');
-    var name = isVP ? 'VP Reviewer' : (isDirector ? 'Sr. Director' : (isEditor ? 'Editor' : 'Viewer'));
+    var name = (currentUser && (currentUser.displayName || currentUser.email)) || getRole();
 
     connRef.on('value', function(snap) {
         if (snap.val() !== true) return;
@@ -3373,7 +3753,7 @@ function initPresence() {
 
 function updatePresenceName() {
     if (!fbReady || !_myPresenceKey) return;
-    var name = isVP ? 'VP Reviewer' : (isDirector ? 'Sr. Director' : (isEditor ? 'Editor' : 'Viewer'));
+    var name = (currentUser && (currentUser.displayName || currentUser.email)) || getRole();
     fbDb.ref('awayDaysPresence/' + _myPresenceKey).update({
         name: name,
         isEditor: isEditor,
@@ -3405,18 +3785,9 @@ function renderPresence(users) {
     container.innerHTML = html;
 }
 
-if (fbReady) {
-    initPresence();
-    loadComments();
-}
-
-// Update presence when editor logs in
-var _origCheckEditorAuth = checkEditorAuth;
-checkEditorAuth = function() {
-    var result = _origCheckEditorAuth();
-    if (result) updatePresenceName();
-    return result;
-};
+// Realtime data (presence + comments) is started by onAuthorized() once the
+// signed-in user passes the access check. Kick off the auth flow now.
+startAuthFlow();
 
 // === Spain Away Days Swap ===
 const spainData = {"national": {"label": "Festivos Nacionales", "holidays": [{"name": "Año Nuevo", "month": 1, "day": 1}, {"name": "Epifanía del Señor", "month": 1, "day": 6}, {"name": "Viernes Santo", "rule": "easter", "offset": -2}, {"name": "Día del Trabajo", "month": 5, "day": 1}, {"name": "Asunción de la Virgen", "month": 8, "day": 15}, {"name": "Fiesta Nacional de España", "month": 10, "day": 12}, {"name": "Todos los Santos", "month": 11, "day": 1}, {"name": "Día de la Constitución", "month": 12, "day": 6}, {"name": "Inmaculada Concepción", "month": 12, "day": 8}, {"name": "Navidad", "month": 12, "day": 25}]}, "optional_national": [{"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "San José", "month": 3, "day": 19}, {"name": "Santiago Apóstol", "month": 7, "day": 25}], "provinces": {"Andalucía": {"holidays": [{"name": "Día de Andalucía", "month": 2, "day": 28}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Aragón": {"holidays": [{"name": "Día de Aragón", "month": 4, "day": 23}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Asturias": {"holidays": [{"name": "Día de Asturias", "month": 9, "day": 8}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Baleares": {"holidays": [{"name": "Día de Baleares", "month": 3, "day": 1}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "Segunda Fiesta de Navidad", "month": 12, "day": 26}]}, "Canarias": {"holidays": [{"name": "Día de Canarias", "month": 5, "day": 30}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Cantabria": {"holidays": [{"name": "Día de las Instituciones de Cantabria", "month": 7, "day": 28}, {"name": "La Bien Aparecida", "month": 9, "day": 15}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Castilla-La Mancha": {"holidays": [{"name": "Día de Castilla-La Mancha", "month": 5, "day": 31}, {"name": "Corpus Christi", "rule": "easter", "offset": 60}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}]}, "Castilla y León": {"holidays": [{"name": "Día de Castilla y León", "month": 4, "day": 23}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Cataluña": {"holidays": [{"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "San Juan", "month": 6, "day": 24}, {"name": "Día de Cataluña", "month": 9, "day": 11}, {"name": "San Esteban", "month": 12, "day": 26}]}, "Comunidad de Madrid": {"holidays": [{"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Día de la Comunidad de Madrid", "month": 5, "day": 2}]}, "Comunidad Valenciana": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "San Juan", "month": 6, "day": 24}, {"name": "Día de la Comunidad Valenciana", "month": 10, "day": 9}]}, "Extremadura": {"holidays": [{"name": "Día de Extremadura", "month": 9, "day": 8}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}]}, "Galicia": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "San Xoán (Noche de San Juan)", "month": 6, "day": 24}, {"name": "Santiago Apóstol / Día de Galicia", "month": 7, "day": 25}]}, "La Rioja": {"holidays": [{"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "Día de La Rioja", "month": 6, "day": 9}]}, "Navarra": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "San Francisco Javier", "month": 12, "day": 3}]}, "País Vasco": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "Santiago Apóstol", "month": 7, "day": 25}]}, "Región de Murcia": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Día de la Región de Murcia", "month": 6, "day": 9}]}, "Ceuta": {"holidays": [{"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Día de Ceuta", "month": 9, "day": 2}]}, "Melilla": {"holidays": [{"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Día de Melilla", "month": 9, "day": 17}]}, "Granada (Andalucía)": {"holidays": [{"name": "Día de Andalucía", "month": 2, "day": 28}, {"name": "Jueves Santo", "rule": "easter", "offset": -3}, {"name": "Día de la Toma de Granada", "month": 1, "day": 2, "scope_override": "Local"}, {"name": "Corpus Christi (Granada)", "rule": "easter", "offset": 60, "scope_override": "Local"}]}, "Barcelona (Cataluña)": {"holidays": [{"name": "Lunes de Pascua", "rule": "easter", "offset": 1}, {"name": "San Juan", "month": 6, "day": 24}, {"name": "Día de Cataluña (Diada)", "month": 9, "day": 11}, {"name": "San Esteban", "month": 12, "day": 26}, {"name": "Lunes de Pascua Granada (Pentecostés)", "rule": "easter", "offset": 50, "scope_override": "Local"}, {"name": "La Mercè", "month": 9, "day": 24, "scope_override": "Local"}]}, "A Coruña (Galicia)": {"holidays": [{"name": "San José", "month": 3, "day": 19}, {"name": "San Xoán (Noche de San Juan)", "month": 6, "day": 24}, {"name": "Santiago Apóstol / Día de Galicia", "month": 7, "day": 25}, {"name": "Martes de Entroido (Carnival)", "month": 2, "day": 17, "scope_override": "Local"}, {"name": "Festividad del Rosario", "month": 10, "day": 7, "scope_override": "Local"}]}}};
