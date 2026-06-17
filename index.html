@@ -1613,6 +1613,22 @@ function updateAccountChip() {
     if (rl) { rl.textContent = currentUserRole || 'viewer'; rl.className = 'account-role ' + (currentUserRole || 'viewer'); }
 }
 
+var _accessListenerAttached = false;
+function attachAccessListener() {
+    // Must be called only AFTER the user is authenticated, otherwise Firebase
+    // denies the read and permanently cancels the listener.
+    if (_accessListenerAttached || !fbReady) return;
+    _accessListenerAttached = true;
+    fbDb.ref('awayDaysAccess').on('value', function(snap) {
+        accessList = snap.val() || {};
+        if (currentUser) {
+            currentUserRole = lookupRole(currentUser.email);
+            if (currentUserRole) onAuthorized(); else showAuthDenied(currentUser.email);
+        }
+        renderAdminList();
+    }, function(err) { console.warn('Access list read failed:', err); });
+}
+
 function startAuthFlow() {
     // Local file / no Firebase: unlock fully as admin so the local dashboard still works.
     if (!fbAuth || location.protocol === 'file:') {
@@ -1623,30 +1639,22 @@ function startAuthFlow() {
         onAuthorized();
         return;
     }
-    // Watch the access list so role changes apply live.
-    fbDb.ref('awayDaysAccess').on('value', function(snap) {
-        accessList = snap.val() || {};
-        if (currentUser) {
-            var newRole = lookupRole(currentUser.email);
-            if (newRole !== currentUserRole) {
-                currentUserRole = newRole;
-                if (newRole) onAuthorized(); else showAuthDenied(currentUser.email);
-            } else if (isAdmin()) {
-                renderAdminList();
-            }
-        }
-    });
     fbAuth.onAuthStateChanged(function(user) {
         currentUser = user;
         if (!user) {
             currentUserRole = null;
+            _accessListenerAttached = false;
             document.body.classList.add('auth-locked');
             var gate = document.getElementById('authGate');
             if (gate) gate.style.display = 'flex';
             return;
         }
-        currentUserRole = lookupRole(user.email);
-        if (currentUserRole) onAuthorized(); else showAuthDenied(user.email);
+        // Now authenticated: it is safe to read the access list.
+        attachAccessListener();
+        // Bootstrap admins get in immediately; everyone else is resolved once the
+        // access list snapshot arrives (handled in attachAccessListener's callback).
+        var role = lookupRole(user.email);
+        if (role) { currentUserRole = role; onAuthorized(); }
     });
 }
 
