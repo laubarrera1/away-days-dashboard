@@ -1324,7 +1324,6 @@ td.cal-changed::before {
 }
 .notif-badge.has-new { display: flex; }
 </style>
-<script>var guideData = {};</script>
 </head>
 <body class="auth-locked">
 
@@ -4935,10 +4934,6 @@ function downloadExcel() {
 
 /* ── Download Guide (Away Days Guide PDF) ─────────────────────── */
 function downloadGuide() {
-    if (!guideData || Object.keys(guideData).length === 0) {
-        alert("The Away Days Guide PDF is too large for the hosted version.\n\nTo download it, run generate_html.py locally and use the local dashboard.");
-        return;
-    }
     var yr = 2026 + 1;
     var key = 'guide_' + yr;
     if (typeof guideData !== 'undefined' && guideData[key]) {
